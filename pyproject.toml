@@ -2,7 +2,7 @@
 name = "anyiostream"
 version = "0.1.0"
 authors = [
-  { name="randy", email="hotung1027@gmail.com" },
+    { name = "randy", email = "hotung1027@gmail.com" },
 ]
 description = "Composable async pipelines with structured concurrency — built on anyio, inspired by aiostream and Rust's Result type."
 readme = "README.md"
