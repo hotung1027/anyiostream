@@ -15,9 +15,66 @@
 
 **anyiostream** provides lazy, composable async pipelines with true inter-stage concurrency, backpressure, and Rust-inspired error handling — all built on [anyio](https://github.com/agronholm/anyio) for seamless asyncio + trio support.
 
+## Why anyiostream?
+
+Python has excellent async primitives, but a gap exists between raw concurrency tools and declarative pipeline APIs:
+
+- **[aiostream](https://github.com/vxgmichel/aiostream)** pioneered composable `|` pipe syntax — but uses nested async generators in a **single task**. Stages execute sequentially via `__anext__()` pull chains, not as concurrent tasks. asyncio-only.
+- **[anyio](https://github.com/agronholm/anyio)** provides the right primitives (`TaskGroup`, `MemoryObjectStream`, `.clone()`) — but no pipeline abstraction. Wiring a 3-stage concurrent pipeline requires ~30 lines of boilerplate.
+
+anyiostream bridges this gap with the **CSP (Communicating Sequential Processes) pattern**: each stage runs as an independent task, connected by bounded channels — the same model as Go channels.
+
+| Feature | aiostream | anyio (raw) | **anyiostream** |
+|---------|-----------|-------------|-----------------|
+| Inter-stage concurrency | No — single-task generator pull | Manual (~30 LOC per pipeline) | **Yes** — task-per-stage in TaskGroup |
+| Fan-out `workers=N` | No (`task_limit` within one stage) | Manual (clone streams yourself) | **Yes** — load-balanced via `clone()` |
+| Backpressure | No (pull-based) | Yes — manual wiring | **Yes** — `buffer_size` per stage |
+| Result `Ok`/`Err` types | No | No | **Yes** — railway-oriented error handling |
+| Backend | asyncio only | asyncio + trio | **asyncio + trio** |
+| Pipe `\|` syntax | Yes | No | **Yes** |
+| Structured concurrency | Partial | Yes | **Yes** — automatic cleanup |
+
+<details>
+<summary><b>30 lines of raw anyio → 4 lines of anyiostream</b></summary>
+
+```python
+# Raw anyio — manual channel wiring
+async def manual_pipeline():
+    s0, r0 = anyio.create_memory_object_stream(10)
+    s1, r1 = anyio.create_memory_object_stream(10)
+    s2, r2 = anyio.create_memory_object_stream(10)
+
+    async def source(send):
+        async with send:
+            for url in urls:
+                await send.send(url)
+
+    async def worker(recv, send):
+        async with recv, send:
+            async for url in recv:
+                await send.send(await fetch(url))
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(source, s0)
+        for _ in range(3):
+            tg.start_soon(worker, r0.clone(), s1.clone())
+        r0.close(); s1.close()
+        # ... repeat for stage 2 ...
+
+# anyiostream — same behavior
+result = await (
+    Stream.from_iterable(urls)
+    .map(fetch, workers=3, buffer_size=10)
+    .map(parse)
+    .collect()
+)
+```
+
+</details>
+
 ## Features
 
-- **Lazy pipelines** — nothing runs until a terminal operation (`collect`, `drain`, `reduce`, `first`, `take`)
+- **Lazy pipelines** — nothing runs until a terminal operation (`collect`, `count`, `reduce`, `first`, `take`)
 - **True inter-stage concurrency** — each stage runs in its own task, items flow between stages via bounded channels
 - **Backpressure** — bounded memory object streams prevent fast producers from overwhelming slow consumers
 - **Fan-out workers** — scale any stage horizontally with `workers=N`
@@ -81,6 +138,14 @@ oks, errs = await (
     | pipe.collect_split()                   # partition into (successes, failures)
 )
 
+# Custom error handler — transform Err items instead of passing through
+results = await (
+    Stream.from_iterable(urls)
+    | pipe.try_map(fetch, workers=5, err=lambda e: log_and_rewrap(e))
+    | pipe.try_map(parse, err=lambda e: e)   # pass Err unchanged explicitly
+    | pipe.collect()
+)
+
 # Or recover from errors
 results = await (
     Stream.from_iterable(urls)
@@ -128,20 +193,22 @@ async with pipeline.open() as items:
 
 | Method | Pipe Syntax | Description |
 |--------|------------|-------------|
-| `.try_map(fn)` | `\| pipe.try_map(fn)` | Map with Ok/Err wrapping |
-| `.try_flat_map(fn)` | `\| pipe.try_flat_map(fn)` | Flat map with Ok/Err wrapping |
+| `.try_map(fn, err=handler)` | `\| pipe.try_map(fn, err=handler)` | Map with Ok/Err wrapping |
+| `.try_flat_map(fn, err=handler)` | `\| pipe.try_flat_map(fn, err=handler)` | Flat map with Ok/Err wrapping |
 | `.try_filter(pred)` | `\| pipe.try_filter(pred)` | Filter Ok values, Err passes through |
-| `.try_foreach(fn)` | `\| pipe.try_foreach(fn)` | Side-effect on Ok values |
+| `.try_foreach(fn, err=handler)` | `\| pipe.try_foreach(fn, err=handler)` | Side-effect on Ok values |
 | `.recover(fn)` | `\| pipe.recover(fn)` | Convert Err → value, unwrap Ok |
 | `.ok_only()` | `\| pipe.ok_only()` | Keep Ok values, drop Err |
 | `.errors_only()` | `\| pipe.errors_only()` | Keep Err values, drop Ok |
+
+> **`err=handler`** (optional): When provided, `Err` items are transformed by `handler(error)` instead of passing through unchanged. Omit to let errors flow downstream as-is.
 
 ### Terminal Operations
 
 | Method | Pipe Syntax | Description |
 |--------|------------|-------------|
 | `.collect()` | `\| pipe.collect()` | Collect all items into a list |
-| `.drain()` | `\| pipe.drain()` | Consume all, return count |
+| `.count()` | `\| pipe.count()` | Consume all, return count |
 | `.collect_split()` | `\| pipe.collect_split()` | Partition into `(oks, errs)` |
 | `.reduce(fn, init)` | — | Fold into single value |
 | `.first()` | — | Return first item or None |
@@ -167,7 +234,7 @@ Source → [channel] → Stage 1 → [channel] → Stage 2 → [channel] → Ter
 ```
 
 1. **Lazy recipe** — `Stream` holds a list of `Process` descriptors. Nothing runs yet.
-2. **Terminal triggers execution** — `collect()`, `drain()`, etc. materialize the pipeline.
+2. **Terminal triggers execution** — `collect()`, `count()`, etc. materialize the pipeline.
 3. **Channel chain** — anyio `MemoryObjectStream` pairs connect each stage with bounded backpressure.
 4. **Structured concurrency** — all tasks run inside a single `TaskGroup`. Cleanup is automatic.
 5. **Fan-out** — `workers=N` clones the receive stream so N workers pull from the same channel (first-available-wins).
