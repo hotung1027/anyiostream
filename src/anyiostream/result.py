@@ -7,11 +7,11 @@ instead of silently dropping errors.
 
 Works with Python 3.12+ ``match/case``::
 
-    match item:
-        case Ok(value=v):
-            print(f"Success: {v}")
-        case Err(error=e):
-            print(f"Failed at {e.stage}: {e.exception}")
+	match item:
+		case Ok(value=v):
+			print(f"Success: {v}")
+		case Err(error=e):
+			print(f"Failed at {e.stage}: {e.exception}")
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from __future__ import annotations
 import traceback as _tb
 from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Generic, NoReturn, TypeAlias, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E")
@@ -35,10 +35,10 @@ class PipelineError:
 	"""Context captured when a pipeline stage raises an exception.
 
 	Attributes:
-	    exception: The caught exception instance.
-	    item: The original input item that caused the error.
-	    stage: Human-readable label of the stage that failed.
-	    traceback: Formatted traceback string at the point of failure.
+		exception: The caught exception instance.
+		item: The original input item that caused the error.
+		stage: Human-readable label of the stage that failed.
+		traceback: Formatted traceback string at the point of failure.
 	"""
 
 	exception: Exception
@@ -57,7 +57,7 @@ class PipelineError:
 
 
 @dataclass(frozen=True, slots=True)
-class Ok(Generic[T]):
+class Ok[T]:
 	"""Successful result wrapping a value."""
 
 	value: T
@@ -90,7 +90,7 @@ class Ok(Generic[T]):
 
 
 @dataclass(frozen=True, slots=True)
-class Err(Generic[E]):
+class Err[E]:
 	"""Error result wrapping an error."""
 
 	error: E
@@ -122,7 +122,7 @@ class Err(Generic[E]):
 		return Err(func(self.error))
 
 
-Result: TypeAlias = Ok[T] | Err[E]
+type Result[T, E] = Ok[T] | Err[E]
 
 
 # ---------------------------------------------------------------------------
@@ -140,7 +140,7 @@ def _try_map_wrap(
 	- Raw value: apply *func*, wrap as ``Ok`` (exception → ``Err``).
 	- ``Ok(value)``: unwrap, apply *func*, wrap as ``Ok``.
 	- ``Err(error)``: if *err* provided, apply to error → ``Err(result)``.
-	  Otherwise pass through unchanged.
+	- Otherwise pass through unchanged.
 	"""
 
 	async def _wrapped(item: Any) -> Ok[Any] | Err[Any]:

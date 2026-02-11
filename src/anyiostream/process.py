@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
 	Any,
-	Generic,
 	TypeVar,
 )
 
@@ -55,11 +54,11 @@ class ProcessConfig:
 	Per-process tunables.
 
 	Attributes:
-	    workers: Number of concurrent workers for this process.
-	        1 = sequential processing, N > 1 = fan-out via stream cloning.
-	    buffer_size: Backpressure buffer between this process and the next.
-	        0 = rendezvous (strongest backpressure), math.inf = unbounded.
-	    name: Optional human-readable label for debugging / tracing.
+		workers: Number of concurrent workers for this process.
+			1 = sequential processing, N > 1 = fan-out via stream cloning.
+		buffer_size: Backpressure buffer between this process and the next.
+			0 = rendezvous (strongest backpressure), math.inf = unbounded.
+		name: Optional human-readable label for debugging / tracing.
 	"""
 
 	workers: int = 1
@@ -79,7 +78,7 @@ class ProcessConfig:
 
 
 @dataclass(slots=True)
-class Process(Generic[T, U]):
+class Process[T, U]:
 	"""
 	A single concurrent processing unit in the pipeline.
 
@@ -113,8 +112,8 @@ class Process(Generic[T, U]):
 		when all workers are done.
 
 		Args:
-		    in_recv: The receive end of the upstream channel.
-		    out_send: The send end of the downstream channel.
+			in_recv: The receive end of the upstream channel.
+			out_send: The send end of the downstream channel.
 		"""
 		async with in_recv, out_send:
 			if self.config.workers == 1:
