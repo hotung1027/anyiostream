@@ -16,18 +16,19 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
-    Any,
-    TypeVar,
+	Any,
+	Generic,
+	TypeVar,
 )
 
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 
 from anyiostream.result import (
-    Err,
-    Ok,
-    _try_flat_map_wrap,
-    _try_map_wrap,
+	Err,
+	Ok,
+	_try_flat_map_wrap,
+	_try_map_wrap,
 )
 
 T = TypeVar("T")
@@ -40,36 +41,36 @@ E = TypeVar("E")
 
 
 class ProcessKind(Enum):
-    """The transformation type of a pipeline process."""
+	"""The transformation type of a pipeline process."""
 
-    MAP = auto()        # 1:1 — each input produces exactly one output
-    FLAT_MAP = auto()   # 1:N — each input produces zero or more outputs
-    FILTER = auto()     # 1:0|1 — each input is kept or dropped
-    FOREACH = auto()    # 1:1 — side-effect only, passes through unchanged
+	MAP = auto()  # 1:1 — each input produces exactly one output
+	FLAT_MAP = auto()  # 1:N — each input produces zero or more outputs
+	FILTER = auto()  # 1:0|1 — each input is kept or dropped
+	FOREACH = auto()  # 1:1 — side-effect only, passes through unchanged
 
 
 @dataclass(frozen=True, slots=True)
 class ProcessConfig:
-    """
-    Per-process tunables.
+	"""
+	Per-process tunables.
 
-    Attributes:
-        workers: Number of concurrent workers for this process.
-            1 = sequential processing, N > 1 = fan-out via stream cloning.
-        buffer_size: Backpressure buffer between this process and the next.
-            0 = rendezvous (strongest backpressure), math.inf = unbounded.
-        name: Optional human-readable label for debugging / tracing.
-    """
+	Attributes:
+	    workers: Number of concurrent workers for this process.
+	        1 = sequential processing, N > 1 = fan-out via stream cloning.
+	    buffer_size: Backpressure buffer between this process and the next.
+	        0 = rendezvous (strongest backpressure), math.inf = unbounded.
+	    name: Optional human-readable label for debugging / tracing.
+	"""
 
-    workers: int = 1
-    buffer_size: float = 0
-    name: str | None = None
+	workers: int = 1
+	buffer_size: float = 0
+	name: str | None = None
 
-    def __post_init__(self) -> None:
-        if self.workers < 1:
-            raise ValueError(f"workers must be >= 1, got {self.workers}")
-        if self.buffer_size < 0:
-            raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
+	def __post_init__(self) -> None:
+		if self.workers < 1:
+			raise ValueError(f"workers must be >= 1, got {self.workers}")
+		if self.buffer_size < 0:
+			raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
 
 
 # ---------------------------------------------------------------------------
@@ -198,201 +199,201 @@ class Process[T, U]:
 
 
 class ResultStages:
-    """Result-aware pipeline stages mixed into ``Stream``.
+	"""Result-aware pipeline stages mixed into ``Stream``.
 
-    Uses ``self.__class__`` to construct new instances, avoiding circular
-    imports with ``stream.py``.
-    """
+	Uses ``self.__class__`` to construct new instances, avoiding circular
+	imports with ``stream.py``.
+	"""
 
-    __slots__ = ()
+	__slots__ = ()
 
-    # -- try_map / try_flat_map / try_filter / try_foreach ------------------
+	# -- try_map / try_flat_map / try_filter / try_foreach ------------------
 
-    def try_map(
-        self,
-        func: Callable[..., Any],
-        *,
-        err: Callable[..., Any] | None = None,
-        workers: int = 1,
-        buffer_size: float = 0,
-        name: str | None = None,
-    ) -> Any:
-        """Result-aware 1:1 transform.
+	def try_map(
+		self,
+		func: Callable[..., Any],
+		*,
+		err: Callable[..., Any] | None = None,
+		workers: int = 1,
+		buffer_size: float = 0,
+		name: str | None = None,
+	) -> Any:
+		"""Result-aware 1:1 transform.
 
-        Applies *func* to ``Ok`` values (or raw values).  Exceptions become
-        ``Err(PipelineError(...))``.  If *err* is provided, ``Err`` items
-        are transformed by ``err(error) → Err(result)``.  Otherwise ``Err``
-        passes through unchanged.
-        """
-        label = name or getattr(func, "__name__", "try_map")
-        process = Process(
-            kind=ProcessKind.MAP,
-            func=_try_map_wrap(func, label, err),
-            config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		Applies *func* to ``Ok`` values (or raw values).  Exceptions become
+		``Err(PipelineError(...))``.  If *err* is provided, ``Err`` items
+		are transformed by ``err(error) → Err(result)``.  Otherwise ``Err``
+		passes through unchanged.
+		"""
+		label = name or getattr(func, "__name__", "try_map")
+		process = Process(
+			kind=ProcessKind.MAP,
+			func=_try_map_wrap(func, label, err),
+			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    def try_flat_map(
-        self,
-        func: Callable[..., Any],
-        *,
-        err: Callable[..., Any] | None = None,
-        workers: int = 1,
-        buffer_size: float = 0,
-        name: str | None = None,
-    ) -> Any:
-        """Result-aware 1:N transform.
+	def try_flat_map(
+		self,
+		func: Callable[..., Any],
+		*,
+		err: Callable[..., Any] | None = None,
+		workers: int = 1,
+		buffer_size: float = 0,
+		name: str | None = None,
+	) -> Any:
+		"""Result-aware 1:N transform.
 
-        Each sub-item from *func* is wrapped as ``Ok``.  Exceptions become
-        a single ``Err``.  If *err* is provided, ``Err`` items are
-        transformed by ``err(error) → Err(result)``.
-        """
-        label = name or getattr(func, "__name__", "try_flat_map")
-        process = Process(
-            kind=ProcessKind.FLAT_MAP,
-            func=_try_flat_map_wrap(func, label, err),
-            config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		Each sub-item from *func* is wrapped as ``Ok``.  Exceptions become
+		a single ``Err``.  If *err* is provided, ``Err`` items are
+		transformed by ``err(error) → Err(result)``.
+		"""
+		label = name or getattr(func, "__name__", "try_flat_map")
+		process = Process(
+			kind=ProcessKind.FLAT_MAP,
+			func=_try_flat_map_wrap(func, label, err),
+			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    def try_filter(
-        self,
-        predicate: Callable[..., Any],
-        *,
-        workers: int = 1,
-        buffer_size: float = 0,
-        name: str | None = None,
-    ) -> Any:
-        """Result-aware filter.
+	def try_filter(
+		self,
+		predicate: Callable[..., Any],
+		*,
+		workers: int = 1,
+		buffer_size: float = 0,
+		name: str | None = None,
+	) -> Any:
+		"""Result-aware filter.
 
-        Applies *predicate* to ``Ok`` values.  ``Err`` always passes through.
-        """
+		Applies *predicate* to ``Ok`` values.  ``Err`` always passes through.
+		"""
 
-        async def _wrapped(item: Any) -> bool:
-            if isinstance(item, Err):
-                return True
-            value = item.value if isinstance(item, Ok) else item
-            result = predicate(value)
-            if isinstance(result, Awaitable):
-                result = await result
-            return bool(result)
+		async def _wrapped(item: Any) -> bool:
+			if isinstance(item, Err):
+				return True
+			value = item.value if isinstance(item, Ok) else item
+			result = predicate(value)
+			if isinstance(result, Awaitable):
+				result = await result
+			return bool(result)
 
-        process = Process(
-            kind=ProcessKind.FILTER,
-            func=_wrapped,
-            config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		process = Process(
+			kind=ProcessKind.FILTER,
+			func=_wrapped,
+			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    def try_foreach(
-        self,
-        func: Callable[..., Any],
-        *,
-        err: Callable[..., Any] | None = None,
-        workers: int = 1,
-        buffer_size: float = 0,
-        name: str | None = None,
-    ) -> Any:
-        """Result-aware side-effect.
+	def try_foreach(
+		self,
+		func: Callable[..., Any],
+		*,
+		err: Callable[..., Any] | None = None,
+		workers: int = 1,
+		buffer_size: float = 0,
+		name: str | None = None,
+	) -> Any:
+		"""Result-aware side-effect.
 
-        Calls *func* on ``Ok`` values for observation (logging, metrics).
-        If *err* is provided, also calls ``err(error)`` on ``Err`` items.
-        Items pass through unchanged.
-        """
+		Calls *func* on ``Ok`` values for observation (logging, metrics).
+		If *err* is provided, also calls ``err(error)`` on ``Err`` items.
+		Items pass through unchanged.
+		"""
 
-        async def _wrapped(item: Any) -> None:
-            if isinstance(item, Ok):
-                result = func(item.value)
-                if isinstance(result, Awaitable):
-                    await result
-            elif isinstance(item, Err) and err is not None:
-                result = err(item.error)
-                if isinstance(result, Awaitable):
-                    await result
+		async def _wrapped(item: Any) -> None:
+			if isinstance(item, Ok):
+				result = func(item.value)
+				if isinstance(result, Awaitable):
+					await result
+			elif isinstance(item, Err) and err is not None:
+				result = err(item.error)
+				if isinstance(result, Awaitable):
+					await result
 
-        process = Process(
-            kind=ProcessKind.FOREACH,
-            func=_wrapped,
-            config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		process = Process(
+			kind=ProcessKind.FOREACH,
+			func=_wrapped,
+			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    # -- Exit ramps: leave Result mode ------------------------------------
+	# -- Exit ramps: leave Result mode ------------------------------------
 
-    def recover(
-        self,
-        func: Callable[..., Any],
-        *,
-        workers: int = 1,
-        buffer_size: float = 0,
-        name: str | None = None,
-    ) -> Any:
-        """Convert ``Err`` to a value using *func*; ``Ok`` is unwrapped.
+	def recover(
+		self,
+		func: Callable[..., Any],
+		*,
+		workers: int = 1,
+		buffer_size: float = 0,
+		name: str | None = None,
+	) -> Any:
+		"""Convert ``Err`` to a value using *func*; ``Ok`` is unwrapped.
 
-        After this stage, items are plain values (no longer ``Result``).
-        """
+		After this stage, items are plain values (no longer ``Result``).
+		"""
 
-        async def _wrapped(item: Any) -> Any:
-            if isinstance(item, Err):
-                result = func(item.error)
-                if isinstance(result, Awaitable):
-                    result = await result
-                return result
-            if isinstance(item, Ok):
-                return item.value
-            return item
+		async def _wrapped(item: Any) -> Any:
+			if isinstance(item, Err):
+				result = func(item.error)
+				if isinstance(result, Awaitable):
+					result = await result
+				return result
+			if isinstance(item, Ok):
+				return item.value
+			return item
 
-        process = Process(
-            kind=ProcessKind.MAP,
-            func=_wrapped,
-            config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		process = Process(
+			kind=ProcessKind.MAP,
+			func=_wrapped,
+			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    def ok_only(self) -> Any:
-        """Keep only ``Ok`` values, unwrap them.  Drop all ``Err``."""
+	def ok_only(self) -> Any:
+		"""Keep only ``Ok`` values, unwrap them.  Drop all ``Err``."""
 
-        def _extract(item: Any) -> list[Any]:
-            if isinstance(item, Ok):
-                return [item.value]
-            if isinstance(item, Err):
-                return []
-            return [item]
+		def _extract(item: Any) -> list[Any]:
+			if isinstance(item, Ok):
+				return [item.value]
+			if isinstance(item, Err):
+				return []
+			return [item]
 
-        process = Process(
-            kind=ProcessKind.FLAT_MAP,
-            func=_extract,
-            config=ProcessConfig(name="ok_only"),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		process = Process(
+			kind=ProcessKind.FLAT_MAP,
+			func=_extract,
+			config=ProcessConfig(name="ok_only"),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    def errors_only(self) -> Any:
-        """Keep only ``Err`` values, unwrap to error.  Drop all ``Ok``."""
+	def errors_only(self) -> Any:
+		"""Keep only ``Err`` values, unwrap to error.  Drop all ``Ok``."""
 
-        def _extract(item: Any) -> list[Any]:
-            if isinstance(item, Err):
-                return [item.error]
-            return []
+		def _extract(item: Any) -> list[Any]:
+			if isinstance(item, Err):
+				return [item.error]
+			return []
 
-        process = Process(
-            kind=ProcessKind.FLAT_MAP,
-            func=_extract,
-            config=ProcessConfig(name="errors_only"),
-        )
-        return self.__class__(self._source_factory, [*self._processes, process])
+		process = Process(
+			kind=ProcessKind.FLAT_MAP,
+			func=_extract,
+			config=ProcessConfig(name="errors_only"),
+		)
+		return self.__class__(self._source_factory, [*self._processes, process])
 
-    # -- Terminal: partition -----------------------------------------------
+	# -- Terminal: partition -----------------------------------------------
 
-    async def collect_split(self) -> tuple[list[Any], list[Any]]:
-        """Collect and partition into ``(ok_values, errors)``."""
-        oks: list[Any] = []
-        errs: list[Any] = []
-        async with self._execute() as recv:
-            async for item in recv:
-                if isinstance(item, Ok):
-                    oks.append(item.value)
-                elif isinstance(item, Err):
-                    errs.append(item.error)
-                else:
-                    oks.append(item)
-        return oks, errs
+	async def collect_split(self) -> tuple[list[Any], list[Any]]:
+		"""Collect and partition into ``(ok_values, errors)``."""
+		oks: list[Any] = []
+		errs: list[Any] = []
+		async with self._execute() as recv:
+			async for item in recv:
+				if isinstance(item, Ok):
+					oks.append(item.value)
+				elif isinstance(item, Err):
+					errs.append(item.error)
+				else:
+					oks.append(item)
+		return oks, errs

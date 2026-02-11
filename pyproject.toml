@@ -41,6 +41,10 @@ dev = [
     "pytest-asyncio>=1.0.0",
     "ruff>=0.14.0",
 ]
+docs = [
+    "mkdocs-material>=9.6",
+    "mkdocs-minify-plugin>=0.8",
+]
 
 [project.urls]
 Homepage = "https://github.com/hotung1027/anyiostream"

@@ -45,12 +45,12 @@ from anyiostream.result import Err, Ok, PipelineError, Result
 from anyiostream.stream import Stream
 
 __all__ = [
-    "Stream",
-    "pipe",
-    "Process",
-    "ProcessConfig",
-    "Ok",
-    "Err",
-    "Result",
-    "PipelineError",
+	"Stream",
+	"pipe",
+	"Process",
+	"ProcessConfig",
+	"Ok",
+	"Err",
+	"Result",
+	"PipelineError",
 ]

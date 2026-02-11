@@ -40,14 +40,15 @@ import math
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from typing import (
-    Any,
-    TypeVar,
+	Any,
+	Generic,
+	TypeVar,
 )
 
 import anyio
 from anyio.streams.memory import (
-    MemoryObjectReceiveStream,
-    MemoryObjectSendStream,
+	MemoryObjectReceiveStream,
+	MemoryObjectSendStream,
 )
 
 from anyiostream.process import Process, ProcessConfig, ProcessKind, ResultStages
