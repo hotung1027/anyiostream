@@ -61,7 +61,7 @@ Issues = "https://github.com/hotung1027/anyiostream/issues"
 requires = ["uv_build >= 0.10.0, <0.11.0"]
 build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
+[tool.uv_build]
 packages = ["src/anyiostream"]
 
 [tool.pytest.ini_options]
