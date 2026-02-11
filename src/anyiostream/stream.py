@@ -10,23 +10,23 @@ Two composition styles are supported:
 
 1. **Method chaining** (builder pattern)::
 
-       result = await (
-           Stream.from_iterable(items)
-           .map(process, workers=4)
-           .filter(is_ok)
-           .collect()
-       )
+		result = await (
+			Stream.from_iterable(items)
+			.map(process, workers=4)
+			.filter(is_ok)
+			.collect()
+			)
 
 2. **Pipe operator** (``|``)::
 
-       from anyiostream import pipe
+		from anyiostream import pipe
 
-       result = await (
-           Stream.from_iterable(items)
-           | pipe.map(process, workers=4)
-           | pipe.filter(is_ok)
-           | pipe.collect()
-       )
+		result = await (
+			Stream.from_iterable(items)
+			| pipe.map(process, workers=4)
+			| pipe.filter(is_ok)
+			| pipe.collect()
+			)
 
 Design: The pipeline is executed inside a single ``async with
 create_task_group()`` block so that structured concurrency is
@@ -99,9 +99,9 @@ class Stream[T](ResultStages):
 		Create a stream from a sync or async iterable.
 
 		Args:
-		    items: Source data.
-		    buffer_size: Buffer between source and first process (not used directly
-		        here — the first process's own ``buffer_size`` controls it).
+			items: Source data.
+			buffer_size: Buffer between source and first process (not used directly
+				here — the first process's own ``buffer_size`` controls it).
 		"""
 
 		async def _produce(send: MemoryObjectSendStream[T]) -> None:
@@ -157,10 +157,10 @@ class Stream[T](ResultStages):
 		1:1 transformation.  ``func`` may be sync or async.
 
 		Args:
-		    func: Transform function ``T -> U``.
-		    workers: Concurrent workers for this process.
-		    buffer_size: Backpressure buffer to downstream.
-		    name: Label for tracing.
+			func: Transform function ``T -> U``.
+			workers: Concurrent workers for this process.
+			buffer_size: Backpressure buffer to downstream.
+			name: Label for tracing.
 		"""
 		process: Process[T, U] = Process(
 			kind=ProcessKind.MAP,
@@ -181,10 +181,10 @@ class Stream[T](ResultStages):
 		1:N transformation.  ``func`` returns an iterable or async iterable.
 
 		Args:
-		    func: Transform function ``T -> Iterable[U]`` or ``T -> AsyncIterable[U]``.
-		    workers: Concurrent workers for this process.
-		    buffer_size: Backpressure buffer to downstream.
-		    name: Label for tracing.
+			func: Transform function ``T -> Iterable[U]`` or ``T -> AsyncIterable[U]``.
+			workers: Concurrent workers for this process.
+			buffer_size: Backpressure buffer to downstream.
+			name: Label for tracing.
 		"""
 		process: Process[T, U] = Process(
 			kind=ProcessKind.FLAT_MAP,
@@ -205,10 +205,10 @@ class Stream[T](ResultStages):
 		Keep only items where ``predicate`` returns truthy.
 
 		Args:
-		    predicate: Filter function ``T -> bool``.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer to downstream.
-		    name: Label for tracing.
+			predicate: Filter function ``T -> bool``.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer to downstream.
+			name: Label for tracing.
 		"""
 		process: Process[T, T] = Process(
 			kind=ProcessKind.FILTER,
@@ -231,10 +231,10 @@ class Stream[T](ResultStages):
 		Useful for logging, metrics, or caching.
 
 		Args:
-		    func: Side-effect function ``T -> None``.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer to downstream.
-		    name: Label for tracing.
+			func: Side-effect function ``T -> None``.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer to downstream.
+			name: Label for tracing.
 		"""
 		process: Process[T, T] = Process(
 			kind=ProcessKind.FOREACH,
@@ -257,9 +257,9 @@ class Stream[T](ResultStages):
 
 		Usage::
 
-		    async with stream._execute() as recv:
-		        async for item in recv:
-		            ...
+			async with stream._execute() as recv:
+				async for item in recv:
+					...
 		"""
 		processes = self._processes
 
@@ -322,7 +322,7 @@ class Stream[T](ResultStages):
 		Execute the pipeline and collect all outputs into a list.
 
 		Returns:
-		    All items produced by the final process.
+			All items produced by the final process.
 		"""
 		results: list[T] = []
 		async with self._execute() as recv:
@@ -335,7 +335,7 @@ class Stream[T](ResultStages):
 		Execute the pipeline, discarding outputs.
 
 		Returns:
-		    Number of items processed.
+			Number of items processed.
 		"""
 		count = 0
 		async with self._execute() as recv:
@@ -352,11 +352,11 @@ class Stream[T](ResultStages):
 		Fold all items into a single value.
 
 		Args:
-		    func: Reducer ``(acc, item) -> acc``.
-		    initial: Starting accumulator value.
+			func: Reducer ``(acc, item) -> acc``.
+			initial: Starting accumulator value.
 
 		Returns:
-		    Final accumulated value.
+			Final accumulated value.
 		"""
 		acc = initial
 		async with self._execute() as recv:
@@ -392,9 +392,9 @@ class Stream[T](ResultStages):
 
 		Usage::
 
-		    async with stream.open() as items:
-		        async for item in items:
-		            process(item)
+			async with stream.open() as items:
+				async for item in items:
+					process(item)
 		"""
 		async with self._execute() as recv:
 			yield recv

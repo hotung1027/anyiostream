@@ -3,14 +3,14 @@ Pipe operators — aiostream-style ``|`` composition.
 
 Usage::
 
-    from anyiostream import Stream, pipe
+	from anyiostream import Stream, pipe
 
-    result = await (
-        Stream.from_iterable(range(10))
-        | pipe.map(lambda x: x * 2, workers=3)
-        | pipe.filter(lambda x: x > 5)
-        | pipe.collect()
-    )
+	result = await (
+		Stream.from_iterable(range(10))
+		| pipe.map(lambda x: x * 2, workers=3)
+		| pipe.filter(lambda x: x > 5)
+		| pipe.collect()
+	)
 
 Each ``pipe.*`` call returns a callable that accepts a ``Stream``
 and returns a new ``Stream`` (or a coroutine for terminals).
@@ -59,13 +59,13 @@ class _Pipe:
 		``| pipe.map(fn)`` — 1:1 transform.
 
 		Args:
-		    func: Transform function.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer.
-		    name: Debug label.
+			func: Transform function.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer.
+			name: Debug label.
 
 		Returns:
-		    A pipe operator that can be used with ``|``.
+			A pipe operator that can be used with ``|``.
 		"""
 
 		def _apply(stream: Stream[T]) -> Stream[U]:
@@ -85,13 +85,13 @@ class _Pipe:
 		``| pipe.flat_map(fn)`` — 1:N transform.
 
 		Args:
-		    func: Function returning iterable or async iterable.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer.
-		    name: Debug label.
+			func: Function returning iterable or async iterable.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer.
+			name: Debug label.
 
 		Returns:
-		    A pipe operator.
+			A pipe operator.
 		"""
 
 		def _apply(stream: Stream[T]) -> Stream[U]:
@@ -113,13 +113,13 @@ class _Pipe:
 		``| pipe.filter(pred)`` — keep items where predicate is truthy.
 
 		Args:
-		    predicate: Filter function.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer.
-		    name: Debug label.
+			predicate: Filter function.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer.
+			name: Debug label.
 
 		Returns:
-		    A pipe operator.
+			A pipe operator.
 		"""
 
 		def _apply(stream: Stream[T]) -> Stream[T]:
@@ -141,13 +141,13 @@ class _Pipe:
 		``| pipe.foreach(fn)`` — side effect, passes items through unchanged.
 
 		Args:
-		    func: Side-effect function.
-		    workers: Concurrent workers.
-		    buffer_size: Backpressure buffer.
-		    name: Debug label.
+			func: Side-effect function.
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer.
+			name: Debug label.
 
 		Returns:
-		    A pipe operator.
+			A pipe operator.
 		"""
 
 		def _apply(stream: Stream[T]) -> Stream[T]:
@@ -163,7 +163,7 @@ class _Pipe:
 		``| pipe.collect()`` — terminal: collect all items into a list.
 
 		Returns:
-		    Sentinel that triggers ``Stream.__or__`` to call ``.collect()``.
+			Sentinel that triggers ``Stream.__or__`` to call ``.collect()``.
 		"""
 		return _COLLECT_SENTINEL
 
@@ -173,7 +173,7 @@ class _Pipe:
 		``| pipe.count()`` — terminal: consume all items, return count.
 
 		Returns:
-		    Sentinel that triggers ``Stream.__or__`` to call ``.count()``.
+			Sentinel that triggers ``Stream.__or__`` to call ``.count()``.
 		"""
 		return _COUNT_SENTINEL
 

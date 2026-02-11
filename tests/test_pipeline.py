@@ -2,15 +2,15 @@
 Tests for anyiostream — concurrent async pipeline with pipe syntax.
 
 Covers:
-    - Stream construction (from_iterable, from_callable)
-    - Process kinds (map, flat_map, filter, foreach)
-    - Concurrency (multi-worker processes)
-    - Pipe operator syntax
-    - Terminal operations (collect, count, reduce, first, take)
-    - Backpressure behavior
-    - Error handling within processes
-    - Async and sync function support
-    - Context manager iteration (open())
+	- Stream construction (from_iterable, from_callable)
+	- Process kinds (map, flat_map, filter, foreach)
+	- Concurrency (multi-worker processes)
+	- Pipe operator syntax
+	- Terminal operations (collect, count, reduce, first, take)
+	- Backpressure behavior
+	- Error handling within processes
+	- Async and sync function support
+	- Context manager iteration (open())
 """
 
 from __future__ import annotations
