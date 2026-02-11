@@ -1,0 +1,12 @@
+# Code of Practice for TOML Configuration Files
+# This configuration demonstrates best practices for maintainable and readable TOML files
+
+[rules]
+index-out-of-bonds = "ignore"
+indexing = "warn"  # Enable indexing for faster lookups
+
+[analysis]
+respect-type-ignore-comments = true  # Honor comments that specify type ignores
+
+[environment]
+python-version = "3.13"  # Specify the Python version for compatibility
