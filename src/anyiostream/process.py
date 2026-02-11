@@ -79,7 +79,7 @@ class ProcessConfig:
 
 
 @dataclass(slots=True)
-class Process(Generic[T, U]):
+class Process[T, U]:
     """
     A single concurrent processing unit in the pipeline.
 

@@ -57,7 +57,7 @@ class PipelineError:
 
 
 @dataclass(frozen=True, slots=True)
-class Ok(Generic[T]):
+class Ok[T]:
     """Successful result wrapping a value."""
 
     value: T
@@ -90,7 +90,7 @@ class Ok(Generic[T]):
 
 
 @dataclass(frozen=True, slots=True)
-class Err(Generic[E]):
+class Err[E]:
     """Error result wrapping an error."""
 
     error: E
@@ -122,7 +122,7 @@ class Err(Generic[E]):
         return Err(func(self.error))
 
 
-Result: TypeAlias = Ok[T] | Err[E]
+type Result[T, E] = Ok[T] | Err[E]
 
 
 # ---------------------------------------------------------------------------

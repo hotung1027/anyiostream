@@ -66,7 +66,7 @@ _COLLECT_SPLIT_SENTINEL = object()
 # ---------------------------------------------------------------------------
 
 
-class Stream(ResultStages, Generic[T]):
+class Stream[T](ResultStages):
     """
     A lazy, composable async pipeline.
 
@@ -342,7 +342,7 @@ class Stream(ResultStages, Generic[T]):
         """
         count = 0
         async with self._execute() as recv:
-            async for item in recv:
+            async for _item in recv:
                 count += 1
         return count
 
