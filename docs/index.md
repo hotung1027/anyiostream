@@ -17,46 +17,50 @@
 
 ## Quick Example
 
-=== "Method Chaining"
+`````{tab-set}
 
-    ```python
-    from anyiostream import Stream
+````{tab-item} Method Chaining
+```python
+from anyiostream import Stream
 
-    result = await (
-        Stream.from_iterable(range(100))
-        .map(lambda x: x * 2, workers=4)
-        .filter(lambda x: x > 50)
-        .collect()
-    )
-    ```
+result = await (
+    Stream.from_iterable(range(100))
+    .map(lambda x: x * 2, workers=4)
+    .filter(lambda x: x > 50)
+    .collect()
+)
+```
+````
 
-=== "Pipe Operator"
+````{tab-item} Pipe Operator
+```python
+from anyiostream import Stream, pipe
 
-    ```python
-    from anyiostream import Stream, pipe
+result = await (
+    Stream.from_iterable(urls)
+    | pipe.map(fetch, workers=10)
+    | pipe.flat_map(extract_links, workers=5)
+    | pipe.filter(is_valid)
+    | pipe.map(normalize)
+    | pipe.collect()
+)
+```
+````
 
-    result = await (
-        Stream.from_iterable(urls)
-        | pipe.map(fetch, workers=10)
-        | pipe.flat_map(extract_links, workers=5)
-        | pipe.filter(is_valid)
-        | pipe.map(normalize)
-        | pipe.collect()
-    )
-    ```
+````{tab-item} Error Handling
+```python
+from anyiostream import Stream, pipe
 
-=== "Error Handling"
+oks, errs = await (
+    Stream.from_iterable(urls)
+    | pipe.try_map(fetch, workers=5)
+    | pipe.try_map(parse)
+    | pipe.collect_split()
+)
+```
+````
 
-    ```python
-    from anyiostream import Stream, pipe
-
-    oks, errs = await (
-        Stream.from_iterable(urls)
-        | pipe.try_map(fetch, workers=5)
-        | pipe.try_map(parse)
-        | pipe.collect_split()
-    )
-    ```
+`````
 
 ## Key Features
 
@@ -81,9 +85,35 @@ uv add anyiostream
 
 ## Next Steps
 
-- [Getting Started](getting-started.md) — installation and first pipeline
-- [Pipeline Basics](guide/pipeline-basics.md) — constructors, stages, terminals
-- [Concurrency & Workers](guide/concurrency.md) — fan-out workers, backpressure, buffer sizing
-- [Error Handling](guide/error-handling.md) — Ok/Err, try_map, recover, collect_split
-- [API Reference](api/stream.md) — full API docs
-- [Comparison](comparison.md) — how anyiostream differs from aiostream and raw anyio
+```{toctree}
+:maxdepth: 2
+:caption: Getting Started
+
+getting-started
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Guide
+
+guide/pipeline-basics
+guide/concurrency
+guide/error-handling
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: API Reference
+
+api/stream
+api/pipe
+api/result
+api/process
+```
+
+```{toctree}
+:maxdepth: 1
+:caption: More
+
+comparison
+```

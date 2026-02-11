@@ -42,8 +42,12 @@ dev = [
     "ruff>=0.14.0",
 ]
 docs = [
-    "mkdocs-material>=9.6",
-    "mkdocs-minify-plugin>=0.8",
+    "sphinx>=8.0",
+    "sphinx-rtd-theme>=3.0",
+    "myst-parser>=4.0",
+    "sphinx-copybutton>=0.5",
+    "sphinx-design>=0.6",
+    "sphinx-autodoc2>=0.5",
 ]
 
 [project.urls]
