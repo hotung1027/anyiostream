@@ -1,4 +1,4 @@
-name: Docs
+name: gh-page
 
 on:
   push:
