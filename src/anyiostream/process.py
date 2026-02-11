@@ -16,8 +16,8 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
-    Any,
-    TypeVar,
+	Any,
+	TypeVar,
 )
 
 import anyio

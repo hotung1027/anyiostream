@@ -237,66 +237,81 @@ class TestForeach:
 
 
 class TestPipeOperator:
-    """Test ``stream | pipe.map(fn)`` composition."""
-    @pytest.mark.anyio
-    async def test_pipe_map(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3]) | pipe.map(sync_double) | pipe.collect()
-        )
-        assert result == [2, 4, 6]
-    @pytest.mark.anyio
-    async def test_pipe_filter(self) -> None:
-        result = await (
-            Stream.from_iterable(range(6)) | pipe.filter(sync_is_even) | pipe.collect()
-        )
-        assert result == [0, 2, 4]
-    @pytest.mark.anyio
-    async def test_pipe_flat_map(self) -> None:
-        result = await (
-            Stream.from_iterable([2, 3])
-            | pipe.flat_map(sync_expand)
-            | pipe.collect()
-        )
-        expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
-        assert sorted(result) == sorted(expected)
-    @pytest.mark.anyio
-    async def test_pipe_chained(self) -> None:
-        result = await (
-            Stream.from_iterable(range(10))
-            | pipe.filter(sync_is_even)
-            | pipe.map(sync_double)
-            | pipe.collect()
-        )
-        assert sorted(result) == [0, 4, 8, 12, 16]
-    @pytest.mark.anyio
-    async def test_pipe_count(self) -> None:
-        count = await (
-            Stream.from_iterable(range(5))
-            | pipe.map(sync_double)
-            | pipe.count()
-        )
-        assert count == 5
-    @pytest.mark.anyio
-    async def test_pipe_foreach(self) -> None:
-        seen: list[int] = []
-        result = await (
-            Stream.from_iterable([1, 2])
-            | pipe.foreach(seen.append)
-            | pipe.collect()
-        )
-        assert result == [1, 2]
-        assert seen == [1, 2]
-    @pytest.mark.anyio
-    async def test_pipe_with_workers(self) -> None:
-        result = await (
-            Stream.from_iterable(range(20))
-            | pipe.map(sync_double, workers=4)
-            | pipe.filter(lambda x: x >= 10, workers=2)
-            | pipe.collect()
-        )
-        assert sorted(result) == [
-            10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38
-        ]
+	"""Test ``stream | pipe.map(fn)`` composition."""
+
+	@pytest.mark.anyio
+	async def test_pipe_map(self) -> None:
+		result = await (
+			Stream.from_iterable([1, 2, 3]) | pipe.map(sync_double) | pipe.collect()
+		)
+		assert result == [2, 4, 6]
+
+	@pytest.mark.anyio
+	async def test_pipe_filter(self) -> None:
+		result = await (
+			Stream.from_iterable(range(6)) | pipe.filter(sync_is_even) | pipe.collect()
+		)
+		assert result == [0, 2, 4]
+
+	@pytest.mark.anyio
+	async def test_pipe_flat_map(self) -> None:
+		result = await (
+			Stream.from_iterable([2, 3]) | pipe.flat_map(sync_expand) | pipe.collect()
+		)
+		expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
+		assert sorted(result) == sorted(expected)
+
+	@pytest.mark.anyio
+	async def test_pipe_chained(self) -> None:
+		result = await (
+			Stream.from_iterable(range(10))
+			| pipe.filter(sync_is_even)
+			| pipe.map(sync_double)
+			| pipe.collect()
+		)
+		assert sorted(result) == [0, 4, 8, 12, 16]
+
+	@pytest.mark.anyio
+	async def test_pipe_count(self) -> None:
+		count = await (
+			Stream.from_iterable(range(5)) | pipe.map(sync_double) | pipe.count()
+		)
+		assert count == 5
+
+	@pytest.mark.anyio
+	async def test_pipe_foreach(self) -> None:
+		seen: list[int] = []
+		result = await (
+			Stream.from_iterable([1, 2]) | pipe.foreach(seen.append) | pipe.collect()
+		)
+		assert result == [1, 2]
+		assert seen == [1, 2]
+
+	@pytest.mark.anyio
+	async def test_pipe_with_workers(self) -> None:
+		result = await (
+			Stream.from_iterable(range(20))
+			| pipe.map(sync_double, workers=4)
+			| pipe.filter(lambda x: x >= 10, workers=2)
+			| pipe.collect()
+		)
+		assert sorted(result) == [
+			10,
+			12,
+			14,
+			16,
+			18,
+			20,
+			22,
+			24,
+			26,
+			28,
+			30,
+			32,
+			34,
+			36,
+			38,
+		]
 
 
 # =========================================================================

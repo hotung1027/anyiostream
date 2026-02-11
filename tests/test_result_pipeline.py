@@ -131,8 +131,8 @@ class TestTryMap:
 
 	@pytest.mark.anyio
 	async def test_all_success(self) -> None:
-		result = (
-			await Stream.from_iterable([1, 2, 3]).try_map(lambda x: x * 10).collect()
+		result = await (
+			Stream.from_iterable([1, 2, 3]).try_map(lambda x: x * 10).collect()
 		)
 		assert len(result) == 3
 		assert all(isinstance(r, Ok) for r in result)
