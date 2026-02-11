@@ -1,6 +1,6 @@
 [project]
 name = "anyiostream"
-version = "0.1.0"
+version = "0.0.1-alpha"
 authors = [
     { name = "randy", email = "hotung1027@gmail.com" },
 ]
