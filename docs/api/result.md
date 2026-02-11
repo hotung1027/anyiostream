@@ -1,6 +1,11 @@
 # Result Types
 
-::: anyiostream.result
+```{eval-rst}
+.. automodule:: anyiostream.result
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
 
 Rust-inspired `Ok`/`Err` discriminated union for pipeline error handling.
 

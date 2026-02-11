@@ -1,6 +1,11 @@
 # Stream
 
-::: anyiostream.stream.Stream
+```{eval-rst}
+.. autoclass:: anyiostream.stream.Stream
+   :members:
+   :undoc-members:
+   :show-inheritance:
+```
 
 The `Stream` class is the core pipeline builder. It holds a lazy recipe of `Process` stages that execute only when a terminal operation is called.
 
