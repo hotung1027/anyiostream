@@ -1,6 +1,10 @@
 # Pipe Operators
 
-::: anyiostream.operators._Pipe
+```{eval-rst}
+.. autoclass:: anyiostream.operators._Pipe
+   :members:
+   :undoc-members:
+```
 
 The `pipe` singleton provides static methods that return callables for use with the `|` operator.
 

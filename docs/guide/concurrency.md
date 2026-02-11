@@ -31,8 +31,9 @@ result = await (
 
 Workers are load-balanced via anyio's `MemoryObjectReceiveStream.clone()` — the first worker to call `receive()` gets the next item.
 
-!!! note "Order is not preserved"
-    With `workers > 1`, output order depends on which worker finishes first. If you need ordered results, use `workers=1` or sort after collecting.
+```{note}
+With `workers > 1`, output order depends on which worker finishes first. If you need ordered results, use `workers=1` or sort after collecting.
+```
 
 ## Backpressure & Buffer Sizing
 

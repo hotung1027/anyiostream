@@ -2,23 +2,27 @@
 
 ## Installation
 
-=== "pip"
+`````{tab-set}
 
-    ```bash
-    pip install anyiostream
-    ```
+````{tab-item} pip
+```bash
+pip install anyiostream
+```
+````
 
-=== "uv"
+````{tab-item} uv
+```bash
+uv add anyiostream
+```
+````
 
-    ```bash
-    uv add anyiostream
-    ```
+````{tab-item} poetry
+```bash
+poetry add anyiostream
+```
+````
 
-=== "poetry"
-
-    ```bash
-    poetry add anyiostream
-    ```
+`````
 
 **Requirements:** Python 3.12+. The only runtime dependency is [anyio](https://github.com/agronholm/anyio) ≥ 4.8.0.
 
