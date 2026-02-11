@@ -4,8 +4,8 @@
     <em>Composable async pipelines with structured concurrency</em>
   </p>
   <p align="center">
-    [![CI](https://github.com/hotung1027/anyiostream/actions/workflows/ci.yml/badge.svg)](https://github.com/hotung1027/anyiostream/actions/workflows/ci.yml)
-    <a href="https://github.com/hotung1027/anyiostream/actions"><img src="https://img.shields.io/github/actions/workflow/status/hotung1027/anyiostream/ci.yml?branch=main&style=flat-square" alt="CI"></a>
+    <a href="https://github.com/hotung1027/anyiostream/actions/workflows/ci.yml"><img src="https://github.com/hotung1027/anyiostream/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+    <a href="https://github.com/hotung1027/anyiostream/actions"><img src="https://img.shields.io/github/actions/workflow/status/hotung1027/anyiostream/docs.yml?branch=main&style=flat-square" alt="doc"></a>
     <a href="https://pypi.org/project/anyiostream/"><img src="https://img.shields.io/pypi/v/anyiostream?" alt="PyPI"></a>
     <a href="https://pypi.org/project/anyiostream/"><img src="https://img.shields.io/pypi/pyversions/anyiostream?" alt="Python"></a>
     <a href="LICENSE"><img src="https://img.shields.io/github/license/hotung1027/anyiostream?style=flat-square" alt="License"></a>
