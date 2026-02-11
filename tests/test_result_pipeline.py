@@ -127,119 +127,129 @@ class TestPipelineError:
 
 
 class TestTryMap:
-    """Test try_map: raw T -> Result[U, PipelineError], with err= param."""
-    @pytest.mark.anyio
-    async def test_all_success(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3]).try_map(lambda x: x * 10).collect()
-        )
-        assert len(result) == 3
-        assert all(isinstance(r, Ok) for r in result)
-        assert sorted(r.unwrap() for r in result) == [10, 20, 30]
-    @pytest.mark.anyio
-    async def test_one_error(self) -> None:
-        def risky(x: int) -> int:
-            if x == 2:
-                raise ValueError("boom")
-            return x * 10
+	"""Test try_map: raw T -> Result[U, PipelineError], with err= param."""
 
-        result = await Stream.from_iterable([1, 2, 3]).try_map(risky).collect()
-        assert len(result) == 3
+	@pytest.mark.anyio
+	async def test_all_success(self) -> None:
+		result = await (
+			Stream.from_iterable([1, 2, 3]).try_map(lambda x: x * 10).collect()
+		)
+		assert len(result) == 3
+		assert all(isinstance(r, Ok) for r in result)
+		assert sorted(r.unwrap() for r in result) == [10, 20, 30]
 
-        oks = [r for r in result if isinstance(r, Ok)]
-        errs = [r for r in result if isinstance(r, Err)]
-        assert len(errs) == 1
-        assert sorted(r.unwrap() for r in oks) == [10, 30]
+	@pytest.mark.anyio
+	async def test_one_error(self) -> None:
+		def risky(x: int) -> int:
+			if x == 2:
+				raise ValueError("boom")
+			return x * 10
 
-        err = errs[0].error
-        assert isinstance(err, PipelineError)
-        assert isinstance(err.exception, ValueError)
-        assert err.item == 2
-        assert err.stage == "risky"
-    @pytest.mark.anyio
-    async def test_all_error(self) -> None:
-        def boom(x: int) -> int:
-            raise RuntimeError(f"fail-{x}")
+		result = await Stream.from_iterable([1, 2, 3]).try_map(risky).collect()
+		assert len(result) == 3
 
-        result = await Stream.from_iterable([1, 2]).try_map(boom).collect()
-        assert all(isinstance(r, Err) for r in result)
-        assert len(result) == 2
-    @pytest.mark.anyio
-    async def test_async_func(self) -> None:
-        async def double(x: int) -> int:
-            return x * 2
+		oks = [r for r in result if isinstance(r, Ok)]
+		errs = [r for r in result if isinstance(r, Err)]
+		assert len(errs) == 1
+		assert sorted(r.unwrap() for r in oks) == [10, 30]
 
-        result = await Stream.from_iterable([5]).try_map(double).collect()
-        assert len(result) == 1
-        assert result[0].unwrap() == 10
-    @pytest.mark.anyio
-    async def test_async_func_error(self) -> None:
-        async def fail(x: int) -> int:
-            raise TypeError("async boom")
+		err = errs[0].error
+		assert isinstance(err, PipelineError)
+		assert isinstance(err.exception, ValueError)
+		assert err.item == 2
+		assert err.stage == "risky"
 
-        result = await Stream.from_iterable([1]).try_map(fail).collect()
-        assert len(result) == 1
-        assert isinstance(result[0], Err)
-        assert isinstance(result[0].error.exception, TypeError)
-    @pytest.mark.anyio
-    async def test_err_handler(self) -> None:
-        """try_map with err= transforms Err items."""
-        def risky(x: int) -> int:
-            if x == 2:
-                raise ValueError("boom")
-            return x * 10
+	@pytest.mark.anyio
+	async def test_all_error(self) -> None:
+		def boom(x: int) -> int:
+			raise RuntimeError(f"fail-{x}")
 
-        result = await (
-            Stream.from_iterable([1, 2, 3])
-            .try_map(risky)
-            .try_map(lambda x: x + 1, err=lambda e: f"handled: {e.stage}")
-            .collect()
-        )
-        oks = [r for r in result if isinstance(r, Ok)]
-        errs = [r for r in result if isinstance(r, Err)]
-        assert sorted(r.unwrap() for r in oks) == [11, 31]
-        assert len(errs) == 1
-        assert errs[0].error == "handled: risky"
-    @pytest.mark.anyio
-    async def test_err_passes_through(self) -> None:
-        """Without err=, Err items pass through unchanged."""
-        def risky(x: int) -> int:
-            if x == 2:
-                raise ValueError("boom")
-            return x * 10
+		result = await Stream.from_iterable([1, 2]).try_map(boom).collect()
+		assert all(isinstance(r, Err) for r in result)
+		assert len(result) == 2
 
-        result = await (
-            Stream.from_iterable([1, 2, 3])
-            .try_map(risky)
-            .try_map(lambda x: x + 1)
-            .collect()
-        )
-        oks = [r for r in result if isinstance(r, Ok)]
-        errs = [r for r in result if isinstance(r, Err)]
-        assert sorted(r.unwrap() for r in oks) == [11, 31]
-        assert len(errs) == 1
-        assert errs[0].error.stage == "risky"  # original error preserved
-    @pytest.mark.anyio
-    async def test_new_error_in_try_map(self) -> None:
-        """If try_map's func raises, the item becomes a new Err."""
+	@pytest.mark.anyio
+	async def test_async_func(self) -> None:
+		async def double(x: int) -> int:
+			return x * 2
 
-        def second_fail(x: int) -> int:
-            if x == 30:
-                raise RuntimeError("second stage fail")
-            return x + 1
+		result = await Stream.from_iterable([5]).try_map(double).collect()
+		assert len(result) == 1
+		assert result[0].unwrap() == 10
 
-        result = await (
-            Stream.from_iterable([1, 2, 3])
-            .try_map(lambda x: x * 10)
-            .try_map(second_fail)
-            .collect()
-        )
-        oks = [r for r in result if isinstance(r, Ok)]
-        errs = [r for r in result if isinstance(r, Err)]
-        assert sorted(r.unwrap() for r in oks) == [11, 21]
-        assert len(errs) == 1
-        assert isinstance(errs[0].error.exception, RuntimeError)
-        assert errs[0].error.item == 30  # the unwrapped Ok value
+	@pytest.mark.anyio
+	async def test_async_func_error(self) -> None:
+		async def fail(x: int) -> int:
+			raise TypeError("async boom")
+
+		result = await Stream.from_iterable([1]).try_map(fail).collect()
+		assert len(result) == 1
+		assert isinstance(result[0], Err)
+		assert isinstance(result[0].error.exception, TypeError)
+
+	@pytest.mark.anyio
+	async def test_err_handler(self) -> None:
+		"""try_map with err= transforms Err items."""
+
+		def risky(x: int) -> int:
+			if x == 2:
+				raise ValueError("boom")
+			return x * 10
+
+		result = await (
+			Stream.from_iterable([1, 2, 3])
+			.try_map(risky)
+			.try_map(lambda x: x + 1, err=lambda e: f"handled: {e.stage}")
+			.collect()
+		)
+		oks = [r for r in result if isinstance(r, Ok)]
+		errs = [r for r in result if isinstance(r, Err)]
+		assert sorted(r.unwrap() for r in oks) == [11, 31]
+		assert len(errs) == 1
+		assert errs[0].error == "handled: risky"
+
+	@pytest.mark.anyio
+	async def test_err_passes_through(self) -> None:
+		"""Without err=, Err items pass through unchanged."""
+
+		def risky(x: int) -> int:
+			if x == 2:
+				raise ValueError("boom")
+			return x * 10
+
+		result = await (
+			Stream.from_iterable([1, 2, 3])
+			.try_map(risky)
+			.try_map(lambda x: x + 1)
+			.collect()
+		)
+		oks = [r for r in result if isinstance(r, Ok)]
+		errs = [r for r in result if isinstance(r, Err)]
+		assert sorted(r.unwrap() for r in oks) == [11, 31]
+		assert len(errs) == 1
+		assert errs[0].error.stage == "risky"  # original error preserved
+
+	@pytest.mark.anyio
+	async def test_new_error_in_try_map(self) -> None:
+		"""If try_map's func raises, the item becomes a new Err."""
+
+		def second_fail(x: int) -> int:
+			if x == 30:
+				raise RuntimeError("second stage fail")
+			return x + 1
+
+		result = await (
+			Stream.from_iterable([1, 2, 3])
+			.try_map(lambda x: x * 10)
+			.try_map(second_fail)
+			.collect()
+		)
+		oks = [r for r in result if isinstance(r, Ok)]
+		errs = [r for r in result if isinstance(r, Err)]
+		assert sorted(r.unwrap() for r in oks) == [11, 21]
+		assert len(errs) == 1
+		assert isinstance(errs[0].error.exception, RuntimeError)
+		assert errs[0].error.item == 30  # the unwrapped Ok value
 
 
 # =========================================================================

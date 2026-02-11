@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import (
 	Any,
-	Generic,
 	TypeVar,
 )
 
@@ -80,117 +79,117 @@ class ProcessConfig:
 
 @dataclass(slots=True)
 class Process[T, U]:
-    """
-    A single concurrent processing unit in the pipeline.
+	"""
+	A single concurrent processing unit in the pipeline.
 
-    Each process:
-    1. Reads items from an input ``MemoryObjectReceiveStream[T]``
-    2. Applies ``func`` to each item
-    3. Writes results to an output ``MemoryObjectSendStream[U]``
+	Each process:
+	1. Reads items from an input ``MemoryObjectReceiveStream[T]``
+	2. Applies ``func`` to each item
+	3. Writes results to an output ``MemoryObjectSendStream[U]``
 
-    Multiple workers can be spawned via ``config.workers``.  Each worker
-    receives a *clone* of the input stream so items are load-balanced
-    (first-available-wins).
-    """
+	Multiple workers can be spawned via ``config.workers``.  Each worker
+	receives a *clone* of the input stream so items are load-balanced
+	(first-available-wins).
+	"""
 
-    kind: ProcessKind
-    func: Callable[..., Any]
-    config: ProcessConfig = field(default_factory=ProcessConfig)
+	kind: ProcessKind
+	func: Callable[..., Any]
+	config: ProcessConfig = field(default_factory=ProcessConfig)
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
+	# ------------------------------------------------------------------
+	# Public API
+	# ------------------------------------------------------------------
 
-    async def run(
-        self,
-        in_recv: MemoryObjectReceiveStream[T],
-        out_send: MemoryObjectSendStream[U],
-    ) -> None:
-        """
-        Execute this process: spawn workers, process items, close channels.
+	async def run(
+		self,
+		in_recv: MemoryObjectReceiveStream[T],
+		out_send: MemoryObjectSendStream[U],
+	) -> None:
+		"""
+		Execute this process: spawn workers, process items, close channels.
 
-        This method takes ownership of both channel ends and closes them
-        when all workers are done.
+		This method takes ownership of both channel ends and closes them
+		when all workers are done.
 
-        Args:
-            in_recv: The receive end of the upstream channel.
-            out_send: The send end of the downstream channel.
-        """
-        async with in_recv, out_send:
-            if self.config.workers == 1:
-                # Fast path — no clone overhead
-                await self._worker(in_recv, out_send)
-            else:
-                async with anyio.create_task_group() as tg:
-                    for _ in range(self.config.workers):
-                        tg.start_soon(
-                            self._worker,
-                            in_recv.clone(),
-                            out_send.clone(),
-                        )
+		Args:
+		    in_recv: The receive end of the upstream channel.
+		    out_send: The send end of the downstream channel.
+		"""
+		async with in_recv, out_send:
+			if self.config.workers == 1:
+				# Fast path — no clone overhead
+				await self._worker(in_recv, out_send)
+			else:
+				async with anyio.create_task_group() as tg:
+					for _ in range(self.config.workers):
+						tg.start_soon(
+							self._worker,
+							in_recv.clone(),
+							out_send.clone(),
+						)
 
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
+	# ------------------------------------------------------------------
+	# Internal
+	# ------------------------------------------------------------------
 
-    async def _worker(
-        self,
-        recv: MemoryObjectReceiveStream[T],
-        send: MemoryObjectSendStream[U],
-    ) -> None:
-        """Single worker loop: read → transform → write."""
-        async with recv, send:
-            async for item in recv:
-                try:
-                    await self._process_item(item, send)
-                except Exception as exc:
-                    label = self.config.name or self.func.__name__
-                    print(f"[pipeline/{label}] error processing item: {exc}")
+	async def _worker(
+		self,
+		recv: MemoryObjectReceiveStream[T],
+		send: MemoryObjectSendStream[U],
+	) -> None:
+		"""Single worker loop: read → transform → write."""
+		async with recv, send:
+			async for item in recv:
+				try:
+					await self._process_item(item, send)
+				except Exception as exc:
+					label = self.config.name or self.func.__name__
+					print(f"[pipeline/{label}] error processing item: {exc}")
 
-    async def _process_item(
-        self,
-        item: T,
-        send: MemoryObjectSendStream[U],
-    ) -> None:
-        """Dispatch to the correct handler based on process kind."""
-        match self.kind:
-            case ProcessKind.MAP:
-                result = self.func(item)
-                if isinstance(result, Awaitable):
-                    result = await result
-                await send.send(result)
+	async def _process_item(
+		self,
+		item: T,
+		send: MemoryObjectSendStream[U],
+	) -> None:
+		"""Dispatch to the correct handler based on process kind."""
+		match self.kind:
+			case ProcessKind.MAP:
+				result = self.func(item)
+				if isinstance(result, Awaitable):
+					result = await result
+				await send.send(result)
 
-            case ProcessKind.FLAT_MAP:
-                result = self.func(item)
-                if isinstance(result, AsyncIterable):
-                    async for sub in result:
-                        await send.send(sub)
-                elif isinstance(result, Awaitable):
-                    # Awaitable that returns an iterable
-                    resolved = await result
-                    if isinstance(resolved, AsyncIterable):
-                        async for sub in resolved:
-                            await send.send(sub)
-                    else:
-                        for sub in resolved:
-                            await send.send(sub)
-                else:
-                    # Sync iterable
-                    for sub in result:
-                        await send.send(sub)
+			case ProcessKind.FLAT_MAP:
+				result = self.func(item)
+				if isinstance(result, AsyncIterable):
+					async for sub in result:
+						await send.send(sub)
+				elif isinstance(result, Awaitable):
+					# Awaitable that returns an iterable
+					resolved = await result
+					if isinstance(resolved, AsyncIterable):
+						async for sub in resolved:
+							await send.send(sub)
+					else:
+						for sub in resolved:
+							await send.send(sub)
+				else:
+					# Sync iterable
+					for sub in result:
+						await send.send(sub)
 
-            case ProcessKind.FILTER:
-                result = self.func(item)
-                if isinstance(result, Awaitable):
-                    result = await result
-                if result:
-                    await send.send(item)  # type: ignore[arg-type]
+			case ProcessKind.FILTER:
+				result = self.func(item)
+				if isinstance(result, Awaitable):
+					result = await result
+				if result:
+					await send.send(item)  # type: ignore[arg-type]
 
-            case ProcessKind.FOREACH:
-                result = self.func(item)
-                if isinstance(result, Awaitable):
-                    await result
-                await send.send(item)  # type: ignore[arg-type]
+			case ProcessKind.FOREACH:
+				result = self.func(item)
+				if isinstance(result, Awaitable):
+					await result
+				await send.send(item)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

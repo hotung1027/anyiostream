@@ -58,7 +58,7 @@ class PipelineError:
 
 @dataclass(frozen=True, slots=True)
 class Ok[T]:
-    """Successful result wrapping a value."""
+	"""Successful result wrapping a value."""
 
 	value: T
 
@@ -91,7 +91,7 @@ class Ok[T]:
 
 @dataclass(frozen=True, slots=True)
 class Err[E]:
-    """Error result wrapping an error."""
+	"""Error result wrapping an error."""
 
 	error: E
 
