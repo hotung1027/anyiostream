@@ -140,7 +140,7 @@ def _try_map_wrap(
 	- Raw value: apply *func*, wrap as ``Ok`` (exception → ``Err``).
 	- ``Ok(value)``: unwrap, apply *func*, wrap as ``Ok``.
 	- ``Err(error)``: if *err* provided, apply to error → ``Err(result)``.
-	Otherwise pass through unchanged.
+	- Otherwise pass through unchanged.
 	"""
 
 	async def _wrapped(item: Any) -> Ok[Any] | Err[Any]:
