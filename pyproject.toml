@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [
-    { name = "JPRobotix" },
+    { name = "randyt" },
 ]
 keywords = [
     "async",
@@ -43,9 +43,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/JPRobotix/anyiostream"
-Repository = "https://github.com/JPRobotix/anyiostream"
-Issues = "https://github.com/JPRobotix/anyiostream/issues"
+Homepage = "https://github.com/hotung1027/anyiostream"
+Repository = "https://github.com/hotung1027/anyiostream"
+Issues = "https://github.com/hotung1027/anyiostream/issues"
 
 [build-system]
 requires = ["hatchling"]
