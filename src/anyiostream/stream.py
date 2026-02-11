@@ -40,8 +40,8 @@ import math
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, Iterable
 from contextlib import asynccontextmanager
 from typing import (
-	Any,
-	TypeVar,
+    Any,
+    TypeVar,
 )
 
 import anyio
