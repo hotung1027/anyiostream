@@ -4,10 +4,10 @@
     <em>Composable async pipelines with structured concurrency</em>
   </p>
   <p align="center">
-    <a href="https://github.com/JPRobotix/anyiostream/actions"><img src="https://img.shields.io/github/actions/workflow/status/JPRobotix/anyiostream/ci.yml?branch=main&style=flat-square" alt="CI"></a>
+    <a href="https://github.com/hotung1027/anyiostream/actions"><img src="https://img.shields.io/github/actions/workflow/status/hotung1027/anyiostream/ci.yml?branch=main&style=flat-square" alt="CI"></a>
     <a href="https://pypi.org/project/anyiostream/"><img src="https://img.shields.io/pypi/v/anyiostream?style=flat-square" alt="PyPI"></a>
     <a href="https://pypi.org/project/anyiostream/"><img src="https://img.shields.io/pypi/pyversions/anyiostream?style=flat-square" alt="Python"></a>
-    <a href="LICENSE"><img src="https://img.shields.io/github/license/JPRobotix/anyiostream?style=flat-square" alt="License"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/github/license/hotung1027/anyiostream?style=flat-square" alt="License"></a>
   </p>
 </p>
 
