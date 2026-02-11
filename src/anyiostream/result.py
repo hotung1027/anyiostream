@@ -19,7 +19,7 @@ from __future__ import annotations
 import traceback as _tb
 from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Generic, NoReturn, TypeAlias, TypeVar
+from typing import Any, NoReturn, TypeVar
 
 T = TypeVar("T")
 E = TypeVar("E")

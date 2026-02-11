@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator
 
 import anyio
 import pytest
+
 from anyiostream import Stream, pipe
 from anyiostream.process import ProcessConfig
 
@@ -288,7 +289,9 @@ class TestPipeOperator:
             | pipe.filter(lambda x: x >= 10, workers=2)
             | pipe.collect()
         )
-        assert sorted(result) == [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
+        assert sorted(result) == [
+            10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38
+        ]
 
 
 # =========================================================================

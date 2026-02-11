@@ -41,7 +41,6 @@ from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable, I
 from contextlib import asynccontextmanager
 from typing import (
     Any,
-    Generic,
     TypeVar,
 )
 
