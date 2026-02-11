@@ -29,37 +29,43 @@ pytestmark = pytest.mark.anyio
 # Helpers
 # =========================================================================
 
+
 @pytest.mark.anyio
 async def async_double(x: int) -> int:
-    """Async 1:1 transform."""
-    await anyio.sleep(0)  # yield to event loop
-    return x * 2
+	"""Async 1:1 transform."""
+	await anyio.sleep(0)  # yield to event loop
+	return x * 2
+
 
 @pytest.mark.anyio
 def sync_double(x: int) -> int:
-    """Sync 1:1 transform."""
-    return x * 2
+	"""Sync 1:1 transform."""
+	return x * 2
+
 
 @pytest.mark.anyio
 async def async_is_even(x: int) -> bool:
-    await anyio.sleep(0)
-    return x % 2 == 0
+	await anyio.sleep(0)
+	return x % 2 == 0
+
 
 @pytest.mark.anyio
 def sync_is_even(x: int) -> bool:
-    return x % 2 == 0
+	return x % 2 == 0
+
 
 @pytest.mark.anyio
 async def async_expand(x: int) -> AsyncIterator[str]:
-    """Async 1:N transform — yields x copies of str(x)."""
-    for i in range(x):
-        await anyio.sleep(0)
-        yield f"{x}-{i}"
+	"""Async 1:N transform — yields x copies of str(x)."""
+	for i in range(x):
+		await anyio.sleep(0)
+		yield f"{x}-{i}"
+
 
 @pytest.mark.anyio
 def sync_expand(x: int) -> list[str]:
-    """Sync 1:N transform."""
-    return [f"{x}-{i}" for i in range(x)]
+	"""Sync 1:N transform."""
+	return [f"{x}-{i}" for i in range(x)]
 
 
 # =========================================================================
@@ -68,35 +74,40 @@ def sync_expand(x: int) -> list[str]:
 
 
 class TestStreamConstruction:
-    """Test Stream factory methods."""
-    @pytest.mark.anyio
-    async def test_from_iterable_sync(self) -> None:
-        result = await Stream.from_iterable([1, 2, 3]).collect()
-        assert result == [1, 2, 3]
-    @pytest.mark.anyio
-    async def test_from_iterable_async(self) -> None:
-        async def gen():
-            for i in [10, 20, 30]:
-                yield i
+	"""Test Stream factory methods."""
 
-        result = await Stream.from_iterable(gen()).collect()
-        assert result == [10, 20, 30]
-    @pytest.mark.anyio
-    async def test_from_iterable_empty(self) -> None:
-        result = await Stream.from_iterable([]).collect()
-        assert result == []
-    @pytest.mark.anyio
-    async def test_from_callable(self) -> None:
-        result = await Stream.from_callable(lambda: [4, 5, 6]).collect()
-        assert result == [4, 5, 6]
-    @pytest.mark.anyio
-    async def test_from_callable_async_gen(self) -> None:
-        async def gen():
-            for i in [7, 8, 9]:
-                yield i
+	@pytest.mark.anyio
+	async def test_from_iterable_sync(self) -> None:
+		result = await Stream.from_iterable([1, 2, 3]).collect()
+		assert result == [1, 2, 3]
 
-        result = await Stream.from_callable(gen).collect()
-        assert result == [7, 8, 9]
+	@pytest.mark.anyio
+	async def test_from_iterable_async(self) -> None:
+		async def gen():
+			for i in [10, 20, 30]:
+				yield i
+
+		result = await Stream.from_iterable(gen()).collect()
+		assert result == [10, 20, 30]
+
+	@pytest.mark.anyio
+	async def test_from_iterable_empty(self) -> None:
+		result = await Stream.from_iterable([]).collect()
+		assert result == []
+
+	@pytest.mark.anyio
+	async def test_from_callable(self) -> None:
+		result = await Stream.from_callable(lambda: [4, 5, 6]).collect()
+		assert result == [4, 5, 6]
+
+	@pytest.mark.anyio
+	async def test_from_callable_async_gen(self) -> None:
+		async def gen():
+			for i in [7, 8, 9]:
+				yield i
+
+		result = await Stream.from_callable(gen).collect()
+		assert result == [7, 8, 9]
 
 
 # =========================================================================
@@ -105,31 +116,32 @@ class TestStreamConstruction:
 
 
 class TestMap:
-    """Test 1:1 map transformations."""
-    @pytest.mark.anyio
-    async def test_map_sync(self) -> None:
-        result = await Stream.from_iterable([1, 2, 3]).map(sync_double).collect()
-        assert result == [2, 4, 6]
-    @pytest.mark.anyio
-    async def test_map_async(self) -> None:
-        result = await Stream.from_iterable([1, 2, 3]).map(async_double).collect()
-        assert result == [2, 4, 6]
-    @pytest.mark.anyio
-    async def test_map_chained(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3])
-            .map(sync_double)
-            .map(sync_double)
-            .collect()
-        )
-        assert result == [4, 8, 12]
-    @pytest.mark.anyio
-    async def test_map_workers(self) -> None:
-        """Multiple workers should produce the same items (order may vary)."""
-        result = await (
-            Stream.from_iterable(range(20)).map(sync_double, workers=4).collect()
-        )
-        assert sorted(result) == [i * 2 for i in range(20)]
+	"""Test 1:1 map transformations."""
+
+	@pytest.mark.anyio
+	async def test_map_sync(self) -> None:
+		result = await Stream.from_iterable([1, 2, 3]).map(sync_double).collect()
+		assert result == [2, 4, 6]
+
+	@pytest.mark.anyio
+	async def test_map_async(self) -> None:
+		result = await Stream.from_iterable([1, 2, 3]).map(async_double).collect()
+		assert result == [2, 4, 6]
+
+	@pytest.mark.anyio
+	async def test_map_chained(self) -> None:
+		result = await (
+			Stream.from_iterable([1, 2, 3]).map(sync_double).map(sync_double).collect()
+		)
+		assert result == [4, 8, 12]
+
+	@pytest.mark.anyio
+	async def test_map_workers(self) -> None:
+		"""Multiple workers should produce the same items (order may vary)."""
+		result = await (
+			Stream.from_iterable(range(20)).map(sync_double, workers=4).collect()
+		)
+		assert sorted(result) == [i * 2 for i in range(20)]
 
 
 # =========================================================================
@@ -138,25 +150,22 @@ class TestMap:
 
 
 class TestFilter:
-    """Test filter processes."""
-    @pytest.mark.anyio
-    async def test_filter_sync(self) -> None:
-        result = await (
-            Stream.from_iterable(range(6)).filter(sync_is_even).collect()
-        )
-        assert result == [0, 2, 4]
-    @pytest.mark.anyio
-    async def test_filter_async(self) -> None:
-        result = await (
-            Stream.from_iterable(range(6)).filter(async_is_even).collect()
-        )
-        assert result == [0, 2, 4]
-    @pytest.mark.anyio
-    async def test_filter_all_removed(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 3, 5]).filter(sync_is_even).collect()
-        )
-        assert result == []
+	"""Test filter processes."""
+
+	@pytest.mark.anyio
+	async def test_filter_sync(self) -> None:
+		result = await Stream.from_iterable(range(6)).filter(sync_is_even).collect()
+		assert result == [0, 2, 4]
+
+	@pytest.mark.anyio
+	async def test_filter_async(self) -> None:
+		result = await Stream.from_iterable(range(6)).filter(async_is_even).collect()
+		assert result == [0, 2, 4]
+
+	@pytest.mark.anyio
+	async def test_filter_all_removed(self) -> None:
+		result = await Stream.from_iterable([1, 3, 5]).filter(sync_is_even).collect()
+		assert result == []
 
 
 # =========================================================================
@@ -165,36 +174,32 @@ class TestFilter:
 
 
 class TestFlatMap:
-    """Test 1:N flat_map transformations."""
-    @pytest.mark.anyio
-    async def test_flat_map_sync(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3]).flat_map(sync_expand).collect()
-        )
-        expected = ["1-0", "2-0", "2-1", "3-0", "3-1", "3-2"]
-        assert sorted(result) == sorted(expected)
-    @pytest.mark.anyio
-    async def test_flat_map_async(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3]).flat_map(async_expand).collect()
-        )
-        expected = ["1-0", "2-0", "2-1", "3-0", "3-1", "3-2"]
-        assert sorted(result) == sorted(expected)
-    @pytest.mark.anyio
-    async def test_flat_map_empty_expansion(self) -> None:
-        result = await (
-            Stream.from_iterable([0, 0]).flat_map(sync_expand).collect()
-        )
-        assert result == []
-    @pytest.mark.anyio
-    async def test_flat_map_workers(self) -> None:
-        result = await (
-            Stream.from_iterable([2, 3])
-            .flat_map(sync_expand, workers=2)
-            .collect()
-        )
-        expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
-        assert sorted(result) == sorted(expected)
+	"""Test 1:N flat_map transformations."""
+
+	@pytest.mark.anyio
+	async def test_flat_map_sync(self) -> None:
+		result = await Stream.from_iterable([1, 2, 3]).flat_map(sync_expand).collect()
+		expected = ["1-0", "2-0", "2-1", "3-0", "3-1", "3-2"]
+		assert sorted(result) == sorted(expected)
+
+	@pytest.mark.anyio
+	async def test_flat_map_async(self) -> None:
+		result = await Stream.from_iterable([1, 2, 3]).flat_map(async_expand).collect()
+		expected = ["1-0", "2-0", "2-1", "3-0", "3-1", "3-2"]
+		assert sorted(result) == sorted(expected)
+
+	@pytest.mark.anyio
+	async def test_flat_map_empty_expansion(self) -> None:
+		result = await Stream.from_iterable([0, 0]).flat_map(sync_expand).collect()
+		assert result == []
+
+	@pytest.mark.anyio
+	async def test_flat_map_workers(self) -> None:
+		result = await (
+			Stream.from_iterable([2, 3]).flat_map(sync_expand, workers=2).collect()
+		)
+		expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
+		assert sorted(result) == sorted(expected)
 
 
 # =========================================================================
@@ -203,26 +208,26 @@ class TestFlatMap:
 
 
 class TestForeach:
-    """Test side-effect foreach process."""
-    @pytest.mark.anyio
-    async def test_foreach_passthrough(self) -> None:
-        seen: list[int] = []
-        result = await (
-            Stream.from_iterable([1, 2, 3]).foreach(seen.append).collect()
-        )
-        assert result == [1, 2, 3]
-        assert seen == [1, 2, 3]
-    @pytest.mark.anyio
-    async def test_foreach_async(self) -> None:
-        seen: list[int] = []
+	"""Test side-effect foreach process."""
 
-        async def track(x: int) -> None:
-            await anyio.sleep(0)
-            seen.append(x)
+	@pytest.mark.anyio
+	async def test_foreach_passthrough(self) -> None:
+		seen: list[int] = []
+		result = await Stream.from_iterable([1, 2, 3]).foreach(seen.append).collect()
+		assert result == [1, 2, 3]
+		assert seen == [1, 2, 3]
 
-        result = await Stream.from_iterable([10, 20]).foreach(track).collect()
-        assert result == [10, 20]
-        assert sorted(seen) == [10, 20]
+	@pytest.mark.anyio
+	async def test_foreach_async(self) -> None:
+		seen: list[int] = []
+
+		async def track(x: int) -> None:
+			await anyio.sleep(0)
+			seen.append(x)
+
+		result = await Stream.from_iterable([10, 20]).foreach(track).collect()
+		assert result == [10, 20]
+		assert sorted(seen) == [10, 20]
 
 
 # =========================================================================
@@ -231,64 +236,81 @@ class TestForeach:
 
 
 class TestPipeOperator:
-    """Test ``stream | pipe.map(fn)`` composition."""
-    @pytest.mark.anyio
-    async def test_pipe_map(self) -> None:
-        result = await (
-            Stream.from_iterable([1, 2, 3]) | pipe.map(sync_double) | pipe.collect()
-        )
-        assert result == [2, 4, 6]
-    @pytest.mark.anyio
-    async def test_pipe_filter(self) -> None:
-        result = await (
-            Stream.from_iterable(range(6)) | pipe.filter(sync_is_even) | pipe.collect()
-        )
-        assert result == [0, 2, 4]
-    @pytest.mark.anyio
-    async def test_pipe_flat_map(self) -> None:
-        result = await (
-            Stream.from_iterable([2, 3])
-            | pipe.flat_map(sync_expand)
-            | pipe.collect()
-        )
-        expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
-        assert sorted(result) == sorted(expected)
-    @pytest.mark.anyio
-    async def test_pipe_chained(self) -> None:
-        result = await (
-            Stream.from_iterable(range(10))
-            | pipe.filter(sync_is_even)
-            | pipe.map(sync_double)
-            | pipe.collect()
-        )
-        assert sorted(result) == [0, 4, 8, 12, 16]
-    @pytest.mark.anyio
-    async def test_pipe_count(self) -> None:
-        count = await (
-            Stream.from_iterable(range(5))
-            | pipe.map(sync_double)
-            | pipe.count()
-        )
-        assert count == 5
-    @pytest.mark.anyio
-    async def test_pipe_foreach(self) -> None:
-        seen: list[int] = []
-        result = await (
-            Stream.from_iterable([1, 2])
-            | pipe.foreach(seen.append)
-            | pipe.collect()
-        )
-        assert result == [1, 2]
-        assert seen == [1, 2]
-    @pytest.mark.anyio
-    async def test_pipe_with_workers(self) -> None:
-        result = await (
-            Stream.from_iterable(range(20))
-            | pipe.map(sync_double, workers=4)
-            | pipe.filter(lambda x: x >= 10, workers=2)
-            | pipe.collect()
-        )
-        assert sorted(result) == [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 38]
+	"""Test ``stream | pipe.map(fn)`` composition."""
+
+	@pytest.mark.anyio
+	async def test_pipe_map(self) -> None:
+		result = await (
+			Stream.from_iterable([1, 2, 3]) | pipe.map(sync_double) | pipe.collect()
+		)
+		assert result == [2, 4, 6]
+
+	@pytest.mark.anyio
+	async def test_pipe_filter(self) -> None:
+		result = await (
+			Stream.from_iterable(range(6)) | pipe.filter(sync_is_even) | pipe.collect()
+		)
+		assert result == [0, 2, 4]
+
+	@pytest.mark.anyio
+	async def test_pipe_flat_map(self) -> None:
+		result = await (
+			Stream.from_iterable([2, 3]) | pipe.flat_map(sync_expand) | pipe.collect()
+		)
+		expected = ["2-0", "2-1", "3-0", "3-1", "3-2"]
+		assert sorted(result) == sorted(expected)
+
+	@pytest.mark.anyio
+	async def test_pipe_chained(self) -> None:
+		result = await (
+			Stream.from_iterable(range(10))
+			| pipe.filter(sync_is_even)
+			| pipe.map(sync_double)
+			| pipe.collect()
+		)
+		assert sorted(result) == [0, 4, 8, 12, 16]
+
+	@pytest.mark.anyio
+	async def test_pipe_count(self) -> None:
+		count = await (
+			Stream.from_iterable(range(5)) | pipe.map(sync_double) | pipe.count()
+		)
+		assert count == 5
+
+	@pytest.mark.anyio
+	async def test_pipe_foreach(self) -> None:
+		seen: list[int] = []
+		result = await (
+			Stream.from_iterable([1, 2]) | pipe.foreach(seen.append) | pipe.collect()
+		)
+		assert result == [1, 2]
+		assert seen == [1, 2]
+
+	@pytest.mark.anyio
+	async def test_pipe_with_workers(self) -> None:
+		result = await (
+			Stream.from_iterable(range(20))
+			| pipe.map(sync_double, workers=4)
+			| pipe.filter(lambda x: x >= 10, workers=2)
+			| pipe.collect()
+		)
+		assert sorted(result) == [
+			10,
+			12,
+			14,
+			16,
+			18,
+			20,
+			22,
+			24,
+			26,
+			28,
+			30,
+			32,
+			34,
+			36,
+			38,
+		]
 
 
 # =========================================================================
@@ -297,36 +319,42 @@ class TestPipeOperator:
 
 
 class TestTerminals:
-    """Test terminal operations beyond collect."""
-    @pytest.mark.anyio
-    async def test_reduce(self) -> None:
-        total = await (
-            Stream.from_iterable([1, 2, 3, 4]).reduce(lambda acc, x: acc + x, 0)
-        )
-        assert total == 10
-    @pytest.mark.anyio
-    async def test_reduce_async(self) -> None:
-        async def add(acc: int, x: int) -> int:
-            return acc + x
+	"""Test terminal operations beyond collect."""
 
-        total = await Stream.from_iterable([1, 2, 3]).reduce(add, 0)
-        assert total == 6
-    @pytest.mark.anyio
-    async def test_first(self) -> None:
-        result = await Stream.from_iterable([10, 20, 30]).first()
-        assert result == 10
-    @pytest.mark.anyio
-    async def test_first_empty(self) -> None:
-        result = await Stream.from_iterable([]).first()
-        assert result is None
-    @pytest.mark.anyio
-    async def test_take(self) -> None:
-        result = await Stream.from_iterable(range(100)).take(3)
-        assert len(result) == 3
-    @pytest.mark.anyio
-    async def test_count(self) -> None:
-        count = await Stream.from_iterable(range(7)).count()
-        assert count == 7
+	@pytest.mark.anyio
+	async def test_reduce(self) -> None:
+		total = await Stream.from_iterable([1, 2, 3, 4]).reduce(
+			lambda acc, x: acc + x, 0
+		)
+		assert total == 10
+
+	@pytest.mark.anyio
+	async def test_reduce_async(self) -> None:
+		async def add(acc: int, x: int) -> int:
+			return acc + x
+
+		total = await Stream.from_iterable([1, 2, 3]).reduce(add, 0)
+		assert total == 6
+
+	@pytest.mark.anyio
+	async def test_first(self) -> None:
+		result = await Stream.from_iterable([10, 20, 30]).first()
+		assert result == 10
+
+	@pytest.mark.anyio
+	async def test_first_empty(self) -> None:
+		result = await Stream.from_iterable([]).first()
+		assert result is None
+
+	@pytest.mark.anyio
+	async def test_take(self) -> None:
+		result = await Stream.from_iterable(range(100)).take(3)
+		assert len(result) == 3
+
+	@pytest.mark.anyio
+	async def test_count(self) -> None:
+		count = await Stream.from_iterable(range(7)).count()
+		assert count == 7
 
 
 # =========================================================================
@@ -335,67 +363,69 @@ class TestTerminals:
 
 
 class TestConcurrency:
-    """Verify that multi-worker processes actually run concurrently."""
-    @pytest.mark.anyio
-    async def test_concurrent_speedup(self) -> None:
-        """
-        5 items x 0.1s each with 5 workers should complete in ~0.1s,
-        not ~0.5s (sequential).
-        """
+	"""Verify that multi-worker processes actually run concurrently."""
 
-        async def slow_op(x: int) -> int:
-            await anyio.sleep(0.1)
-            return x
+	@pytest.mark.anyio
+	async def test_concurrent_speedup(self) -> None:
+		"""
+		5 items x 0.1s each with 5 workers should complete in ~0.1s,
+		not ~0.5s (sequential).
+		"""
 
-        start = time.monotonic()
-        result = await (
-            Stream.from_iterable(range(5))
-            .map(slow_op, workers=5, buffer_size=5)
-            .collect()
-        )
-        elapsed = time.monotonic() - start
+		async def slow_op(x: int) -> int:
+			await anyio.sleep(0.1)
+			return x
 
-        assert sorted(result) == [0, 1, 2, 3, 4]
-        # With 5 workers, should be ~0.1s. Allow generous margin.
-        assert elapsed < 0.4, f"Expected concurrent execution, took {elapsed:.2f}s"
-    @pytest.mark.anyio
-    async def test_multistage_concurrent(self) -> None:
-        """
-        Two slow processes should overlap: items flow through process 2
-        while process 1 is still producing.
-        """
-        events: list[tuple[str, int, float]] = []
-        t0 = time.monotonic()
+		start = time.monotonic()
+		result = await (
+			Stream.from_iterable(range(5))
+			.map(slow_op, workers=5, buffer_size=5)
+			.collect()
+		)
+		elapsed = time.monotonic() - start
 
-        async def stage1(x: int) -> int:
-            events.append(("s1_start", x, time.monotonic() - t0))
-            await anyio.sleep(0.05)
-            events.append(("s1_end", x, time.monotonic() - t0))
-            return x
+		assert sorted(result) == [0, 1, 2, 3, 4]
+		# With 5 workers, should be ~0.1s. Allow generous margin.
+		assert elapsed < 0.4, f"Expected concurrent execution, took {elapsed:.2f}s"
 
-        async def stage2(x: int) -> int:
-            events.append(("s2_start", x, time.monotonic() - t0))
-            await anyio.sleep(0.05)
-            events.append(("s2_end", x, time.monotonic() - t0))
-            return x * 10
+	@pytest.mark.anyio
+	async def test_multistage_concurrent(self) -> None:
+		"""
+		Two slow processes should overlap: items flow through process 2
+		while process 1 is still producing.
+		"""
+		events: list[tuple[str, int, float]] = []
+		t0 = time.monotonic()
 
-        result = await (
-            Stream.from_iterable(range(4))
-            .map(stage1, workers=2, buffer_size=2)
-            .map(stage2, workers=2, buffer_size=2)
-            .collect()
-        )
+		async def stage1(x: int) -> int:
+			events.append(("s1_start", x, time.monotonic() - t0))
+			await anyio.sleep(0.05)
+			events.append(("s1_end", x, time.monotonic() - t0))
+			return x
 
-        assert sorted(result) == [0, 10, 20, 30]
+		async def stage2(x: int) -> int:
+			events.append(("s2_start", x, time.monotonic() - t0))
+			await anyio.sleep(0.05)
+			events.append(("s2_end", x, time.monotonic() - t0))
+			return x * 10
 
-        # Verify overlap: stage2 should start before all stage1 items finish
-        s1_ends = [t for name, _, t in events if name == "s1_end"]
-        s2_starts = [t for name, _, t in events if name == "s2_start"]
-        if s2_starts and s1_ends:
-            # At least one s2 should start before the last s1 ends
-            assert min(s2_starts) < max(s1_ends), (
-                "Stage 2 should start before Stage 1 finishes all items"
-            )
+		result = await (
+			Stream.from_iterable(range(4))
+			.map(stage1, workers=2, buffer_size=2)
+			.map(stage2, workers=2, buffer_size=2)
+			.collect()
+		)
+
+		assert sorted(result) == [0, 10, 20, 30]
+
+		# Verify overlap: stage2 should start before all stage1 items finish
+		s1_ends = [t for name, _, t in events if name == "s1_end"]
+		s2_starts = [t for name, _, t in events if name == "s2_start"]
+		if s2_starts and s1_ends:
+			# At least one s2 should start before the last s1 ends
+			assert min(s2_starts) < max(s1_ends), (
+				"Stage 2 should start before Stage 1 finishes all items"
+			)
 
 
 # =========================================================================
@@ -404,29 +434,31 @@ class TestConcurrency:
 
 
 class TestErrorHandling:
-    """Test that errors in processes don't crash the pipeline."""
-    @pytest.mark.anyio
-    async def test_map_error_skips_item(self) -> None:
-        """Errors in map should skip the item and continue."""
+	"""Test that errors in processes don't crash the pipeline."""
 
-        def risky(x: int) -> int:
-            if x == 2:
-                raise ValueError("boom")
-            return x * 10
+	@pytest.mark.anyio
+	async def test_map_error_skips_item(self) -> None:
+		"""Errors in map should skip the item and continue."""
 
-        result = await Stream.from_iterable([1, 2, 3]).map(risky).collect()
-        # Item 2 should be skipped due to error
-        assert sorted(result) == [10, 30]
-    @pytest.mark.anyio
-    async def test_filter_error_skips_item(self) -> None:
-        def risky_pred(x: int) -> bool:
-            if x == 3:
-                raise ValueError("boom")
-            return x % 2 == 0
+		def risky(x: int) -> int:
+			if x == 2:
+				raise ValueError("boom")
+			return x * 10
 
-        result = await Stream.from_iterable([1, 2, 3, 4]).filter(risky_pred).collect()
-        # x=3 errors out and is skipped, x=1 filtered, x=2,4 pass
-        assert sorted(result) == [2, 4]
+		result = await Stream.from_iterable([1, 2, 3]).map(risky).collect()
+		# Item 2 should be skipped due to error
+		assert sorted(result) == [10, 30]
+
+	@pytest.mark.anyio
+	async def test_filter_error_skips_item(self) -> None:
+		def risky_pred(x: int) -> bool:
+			if x == 3:
+				raise ValueError("boom")
+			return x % 2 == 0
+
+		result = await Stream.from_iterable([1, 2, 3, 4]).filter(risky_pred).collect()
+		# x=3 errors out and is skipped, x=1 filtered, x=2,4 pass
+		assert sorted(result) == [2, 4]
 
 
 # =========================================================================
@@ -435,17 +467,17 @@ class TestErrorHandling:
 
 
 class TestProcessConfig:
-    """Test ProcessConfig validation."""
+	"""Test ProcessConfig validation."""
 
-    def test_valid_config(self) -> None:
-        cfg = ProcessConfig(workers=3, buffer_size=10, name="test")
-        assert cfg.workers == 3
-        assert cfg.buffer_size == 10
+	def test_valid_config(self) -> None:
+		cfg = ProcessConfig(workers=3, buffer_size=10, name="test")
+		assert cfg.workers == 3
+		assert cfg.buffer_size == 10
 
-    def test_invalid_workers(self) -> None:
-        with pytest.raises(ValueError, match="workers must be >= 1"):
-            ProcessConfig(workers=0)
+	def test_invalid_workers(self) -> None:
+		with pytest.raises(ValueError, match="workers must be >= 1"):
+			ProcessConfig(workers=0)
 
-    def test_invalid_buffer(self) -> None:
-        with pytest.raises(ValueError, match="buffer_size must be >= 0"):
-            ProcessConfig(buffer_size=-1)
+	def test_invalid_buffer(self) -> None:
+		with pytest.raises(ValueError, match="buffer_size must be >= 0"):
+			ProcessConfig(buffer_size=-1)
