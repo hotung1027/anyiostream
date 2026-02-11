@@ -48,9 +48,6 @@ docs = [
     "sphinx-design>=0.6",
     "sphinx-autodoc2>=0.5",
 ]
-build = [
-    "uv_build>=0.10.0,<0.11.0",
-]
 
 [project.urls]
 Homepage = "https://github.com/hotung1027/anyiostream"
