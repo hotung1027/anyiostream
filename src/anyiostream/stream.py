@@ -151,6 +151,8 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		item_size_hint: int = 1024,
 		name: str | None = None,
 	) -> Stream[U]:
 		"""
@@ -159,13 +161,21 @@ class Stream[T](ResultStages):
 		Args:
 			func: Transform function ``T -> U``.
 			workers: Concurrent workers for this process.
-			buffer_size: Backpressure buffer to downstream.
+			buffer_size: Backpressure buffer to downstream (item count).
+			max_buffer_bytes: Memory-based buffer limit (takes precedence over buffer_size).
+			item_size_hint: Estimated item size in bytes (used with max_buffer_bytes).
 			name: Label for tracing.
 		"""
 		process: Process[T, U] = Process(
 			kind=ProcessKind.MAP,
 			func=func,
-			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+			config=ProcessConfig(
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				item_size_hint=item_size_hint,
+				name=name,
+			),
 		)
 		return Stream(self._source_factory, [*self._processes, process])
 
@@ -286,12 +296,16 @@ class Stream[T](ResultStages):
 		] = []
 
 		# Source → first process channel (use first process's buffer_size for backpressure)
-		channels.append(anyio.create_memory_object_stream[Any](processes[0].config.buffer_size))
+		channels.append(anyio.create_memory_object_stream[Any](
+			processes[0].config.get_effective_buffer_size()
+		))
 
 		# Inter-process + final output channels
 		for process in processes:
 			channels.append(
-				anyio.create_memory_object_stream[Any](process.config.buffer_size)
+				anyio.create_memory_object_stream[Any](
+					process.config.get_effective_buffer_size()
+				)
 			)
 
 		output_recv = channels[-1][1]
