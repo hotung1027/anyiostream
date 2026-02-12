@@ -592,29 +592,25 @@ class TestBackpressure:
 	@pytest.mark.anyio
 	async def test_backpressure_single_worker_per_stage(self) -> None:
 		"""
-		Test multi-stage pipeline with limited workers (1 per stage).
+		Test multi-stage pipeline with limited workers (1 per stage) and default MemoryBuffer.
 
 		Scenario:
 		- 10 initial items
 		- Stage 1: map(short_task) - 0.01s per item, 1 worker
 		- Stage 2: map(long_task) - 1s per item, 1 worker
 
-		Expected behavior with 1 worker per stage and buffer_size=2:
-		- Stage 1 processes first few items quickly (until buffer fills)
-		- Then Stage 1 blocks waiting for Stage 2 to consume from buffer
+		Expected behavior with 1 worker per stage, buffer_size=2, and default max_buffer_bytes=10MB:
+		- With default MemoryBuffer (10MB), upstream channels are unbounded
+		- Stage 1 processes all items quickly (~0.1s) without blocking
+		- MemoryBuffer absorbs items between Stage 1 and Stage 2
 		- Stage 2 processes items sequentially: 10 × 1s = 10s
-		- Due to backpressure, Stage 1 and Stage 2 are tightly coupled:
-		  - Item 0: Stage 1 (0.01s) → buffer → Stage 2 starts (1s)
-		  - Item 1: Stage 1 (0.01s) → buffer fills
-		  - Item 2: Stage 1 (0.01s) → buffer full, blocks
-		  - Item 3: Stage 1 (0.01s) → still blocking
-		  - Item 4: Stage 2 finishes item 0 → Stage 1 can proceed
 		- Total time: ~10s (dominated by Stage 2's sequential processing)
 
 		This demonstrates:
 		- Sequential processing with limited workers
-		- Backpressure prevents Stage 1 from running ahead (buffer_size=2)
-		- Pipeline stages are synchronized by backpressure
+		- Default MemoryBuffer prevents upstream blocking
+		- Pipeline stages are decoupled by MemoryBuffer
+		- Memory protection with 10MB limit
 		"""
 		stage1_events: list[tuple[str, int, float]] = []
 		stage2_events: list[tuple[str, int, float]] = []
@@ -654,26 +650,27 @@ class TestBackpressure:
 			f"but took {total_time:.2f}s. This indicates timing issues."
 		)
 
-		# Verify stage 1 is blocked by backpressure
-		# First few items process quickly, then Stage 1 must wait for Stage 2
+		# Verify stage 1 is NOT blocked due to default MemoryBuffer
+		# With default max_buffer_bytes=10MB, MemoryBuffer is enabled
+		# This means upstream channels are unbounded, so Stage 1 completes quickly
 		stage1_starts = [t for ev, _, t in stage1_events if ev == "start"]
 		stage1_ends = [t for ev, _, t in stage1_events if ev == "end"]
 
 		if len(stage1_starts) >= 4:
-			# First 4 items should process quickly (before buffer backpressure kicks in)
+			# First 4 items should process quickly
 			first_four_duration = stage1_ends[3] - stage1_starts[0]
 			assert first_four_duration < 0.1, (
 				f"First 4 items in Stage 1 should process quickly (~0.04s), "
 				f"but took {first_four_duration:.2f}s"
 			)
 
-			# Later items are spread out due to backpressure from Stage 2
+			# With MemoryBuffer, ALL items complete quickly (not blocked)
 			if len(stage1_ends) >= 10:
 				total_stage1_duration = stage1_ends[9] - stage1_starts[0]
-				# Stage 1 is blocked by Stage 2, so total duration approaches 10s
-				assert total_stage1_duration > 5.0, (
-					f"Stage 1 should be blocked by Stage 2 backpressure, "
-					f"but completed in {total_stage1_duration:.2f}s"
+				# Stage 1 completes quickly with MemoryBuffer (NOT blocked)
+				assert total_stage1_duration < 0.2, (
+					f"With default MemoryBuffer (10MB), Stage 1 should complete quickly (~0.1s), "
+					f"but took {total_stage1_duration:.2f}s"
 				)
 
 		# Verify stage 2 processes sequentially (items spread over ~10s)
@@ -1042,104 +1039,104 @@ class TestMemoryBufferIntegration:
 		with pytest.raises(ValueError, match="max_buffer_bytes must be > 0"):
 			ProcessConfig(max_buffer_bytes=-100)
 
-	async def test_two_workers_blocking_behavior(self) -> None:
+	async def test_two_workers_no_blocking_with_default(self) -> None:
 		"""
-		Test if short tasks get blocked with 2 workers per stage.
-		
+		Test that with default max_buffer_bytes (10MB), Stage 1 is NOT blocked by Stage 2.
+
 		Scenario:
 		- 10 initial items
 		- Stage 1: map(short_task) - 0.1s per item, 2 workers
 		- Stage 2: map(long_task) - 2s per item, 2 workers
-		
-		Expected behavior with 2 workers and buffer_size=0 (default):
+
+		Expected behavior with 2 workers and default max_buffer_bytes=10MB:
 		- Stage 1 has 2 workers, so can process 2 items at a time
 		- Each short task takes 0.1s
 		- Stage 2 has 2 workers, so can process 2 items at a time
 		- Each long task takes 2s
-		
-		With buffer_size=0 (rendezvous), Stage 1 workers will block waiting for Stage 2
-		to accept items. Since Stage 2 workers are busy for 2s each, Stage 1 will
-		experience blocking.
-		
+
+		With default max_buffer_bytes=10MB, MemoryBuffer is enabled:
+		- Upstream channel to Stage 1 is unbounded
+		- Stage 1 → MemoryBuffer channel is unbounded
+		- MemoryBuffer → Stage 2 channel has buffer_size=0
+
 		Expected timing:
-		- First 2 items: Stage 1 processes in 0.1s, Stage 2 starts immediately
-		- Stage 1 workers block until Stage 2 finishes (2s)
-		- Next 2 items: Stage 1 processes in 0.1s, Stage 2 starts
-		- This repeats for all 10 items in batches of 2
-		
-		Total time: ~5 batches × 2s = ~10s (with Stage 1 mostly blocked)
+		- Stage 1 completes all items in ~0.5s (10 items / 2 workers × 0.1s)
+		- Stage 2 takes ~10s (10 items / 2 workers × 2s)
+		- Total time: ~10s (limited by Stage 2)
+		- Stage 1 is NOT blocked!
 		"""
 		stage1_events: list[tuple[str, int, float]] = []
 		stage2_events: list[tuple[str, int, float]] = []
 		t0 = time.monotonic()
-		
+
 		# Stage 1: Short tasks (0.1s each)
 		async def short_task(x: int) -> int:
 			stage1_events.append(("start", x, time.monotonic() - t0))
 			await anyio.sleep(0.1)
 			stage1_events.append(("end", x, time.monotonic() - t0))
 			return x
-		
+
 		# Stage 2: Long tasks (2s each)
 		async def long_task(x: int) -> int:
 			stage2_events.append(("start", x, time.monotonic() - t0))
 			await anyio.sleep(2.0)
 			stage2_events.append(("end", x, time.monotonic() - t0))
 			return x * 2
-		
-		# Pipeline with 2 workers per stage and buffer_size=0 (rendezvous)
+
+		# Pipeline with 2 workers per stage and default max_buffer_bytes (10MB)
 		result = await (
 			Stream.from_iterable(range(10))
-			.map(short_task, workers=2, buffer_size=0)  # 2 workers, no buffering
-			.map(long_task, workers=2, buffer_size=0)   # 2 workers, no buffering
+			.map(short_task, workers=2, buffer_size=0)  # Default max_buffer_bytes=10MB
+			.map(long_task, workers=2, buffer_size=0)   # Default max_buffer_bytes=10MB
 			.collect()
 		)
-		
+
 		total_time = time.monotonic() - t0
-		
+
 		assert sorted(result) == [i * 2 for i in range(10)]
-		
-		# With 2 workers per stage and rendezvous (buffer_size=0), Stage 1 workers
-		# will block waiting for Stage 2 to accept items.
-		# 10 items / 2 workers = 5 batches
-		# Each batch takes ~2s (limited by Stage 2)
-		# Expected: ~10s total (5 batches × 2s)
-		print(
-			f"\nTwo workers blocking test:"
-			f"\n  Total time: {total_time:.3f}s"
-			f"\n  Expected: ~10s (5 batches of 2 items, each taking 2s)"
-		)
-		
-		# Verify the pipeline takes approximately the expected time
-		# With some tolerance for scheduling overhead
-		assert 9.0 < total_time < 11.5, (
-			f"Expected pipeline to take ~10s with 2 workers and blocking behavior, "
-			f"but took {total_time:.2f}s"
-		)
-		
-		# Analyze Stage 1 blocking behavior
-		# Stage 1 tasks should show significant gaps between batches
+
+		# With default max_buffer_bytes=10MB, MemoryBuffer is enabled
+		# Stage 1 should complete quickly (~0.5s) without blocking
+		stage1_ends = sorted([t for ev, _, t in stage1_events if ev == "end"])
+		if stage1_ends:
+			stage1_completion = max(stage1_ends)
+
+			print(
+				f"\nTwo workers with default max_buffer_bytes (10MB):"
+				f"\n  Stage 1 completion: {stage1_completion:.3f}s"
+				f"\n  Total time: {total_time:.3f}s"
+			)
+
+			# Stage 1 should complete in ~0.5s (NOT 10s!)
+			assert stage1_completion < 1.0, (
+				f"With default MemoryBuffer, Stage 1 should complete in ~0.5s, "
+				f"but took {stage1_completion:.2f}s. Stage 1 appears to be blocked!"
+			)
+
+		# Analyze Stage 1 batch timing - should show NO blocking
 		stage1_starts = sorted([t for ev, _, t in stage1_events if ev == "start"])
 		if len(stage1_starts) >= 4:
-			# Gap between first batch and second batch should be ~2s (Stage 2 blocking)
-			first_batch_end = stage1_starts[1]  # 2nd item starts (first batch processing)
-			second_batch_start = stage1_starts[2]  # 3rd item starts (second batch)
-			gap = second_batch_start - first_batch_end
-			
-			print(
-				f"\n  Stage 1 behavior:"
-				f"\n    First batch start: {stage1_starts[0]:.3f}s, {stage1_starts[1]:.3f}s"
-				f"\n    Second batch start: {stage1_starts[2]:.3f}s, {stage1_starts[3]:.3f}s"
-				f"\n    Gap between batches: {gap:.3f}s"
-			)
-			
-			# The gap should be close to 2s (Stage 2 long task duration)
-			# This confirms Stage 1 is blocked by Stage 2
-			assert 1.7 < gap < 2.3, (
-				f"Expected Stage 1 to be blocked for ~2s between batches, "
-				f"but gap was {gap:.2f}s. This indicates Stage 1 is {'not ' if gap < 1.7 else ''}blocked."
-			)
-		
+			# Gap between batches should be small (~0.1s), NOT ~2s
+			gaps = []
+			for i in range(2, len(stage1_starts), 2):
+				if i < len(stage1_starts):
+					gap = stage1_starts[i] - stage1_starts[i-2]
+					gaps.append(gap)
+
+			if gaps:
+				avg_gap = sum(gaps) / len(gaps)
+				print(
+					f"\n  Stage 1 batch timing:"
+					f"\n    Average gap between batches: {avg_gap:.3f}s"
+					f"\n    Expected: ~0.1s (not blocked)"
+				)
+
+				# Gap should be small (~0.1s), indicating NO blocking
+				assert avg_gap < 0.3, (
+					f"Stage 1 batch gap should be ~0.1s (not blocked), "
+					f"but was {avg_gap:.2f}s. Stage 1 appears to be blocked!"
+				)
+
 		# Verify Stage 2 processes items in batches of 2
 		stage2_starts = sorted([t for ev, _, t in stage2_events if ev == "start"])
 		if len(stage2_starts) >= 4:
@@ -1149,17 +1146,17 @@ class TestMemoryBufferIntegration:
 				f"First batch of Stage 2 should start nearly simultaneously, "
 				f"but spread was {batch1_spread:.2f}s"
 			)
-			
+
 			# Next batch should start ~2s later (after first batch completes)
 			batch_gap = stage2_starts[2] - stage2_starts[0]
 			assert 1.7 < batch_gap < 2.3, (
 				f"Second batch of Stage 2 should start ~2s after first batch, "
 				f"but gap was {batch_gap:.2f}s"
 			)
-		
+
 		print(
-			f"\n  Conclusion: Short tasks ARE blocked by long tasks with 2 workers"
-			f"\n  and buffer_size=0 (rendezvous backpressure)"
+			f"\n  Conclusion: With default max_buffer_bytes (10MB), Stage 1 is NOT blocked!"
+			f"\n  MemoryBuffer is always enabled, providing memory protection and preventing blocking."
 		)
 
 	async def test_memory_buffer_prevents_blocking(self) -> None:
