@@ -50,7 +50,13 @@ from anyio.streams.memory import (
 	MemoryObjectSendStream,
 )
 
-from anyiostream.process import MemoryBuffer, Process, ProcessConfig, ProcessKind, ResultStages
+from anyiostream.process import (
+	MemoryBuffer,
+	Process,
+	ProcessConfig,
+	ProcessKind,
+	ResultStages,
+)
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -308,13 +314,13 @@ class Stream[T](ResultStages):
 		task either completes or is cancelled when the block exits.
 
 		When a process has max_buffer_bytes set, integrates MemoryBuffer:
-		  upstream → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → process
+			upstream → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → process
 
 		Usage::
 
 			async with stream._execute() as recv:
-				async for item in recv:
-					...
+			async for item in recv:
+				...
 		"""
 		processes = self._processes
 
@@ -354,9 +360,7 @@ class Stream[T](ResultStages):
 				channels.append(anyio.create_memory_object_stream[Any](math.inf))
 			else:
 				channels.append(
-					anyio.create_memory_object_stream[Any](
-						process.config.buffer_size
-					)
+					anyio.create_memory_object_stream[Any](process.config.buffer_size)
 				)
 
 		output_recv = channels[-1][1]
