@@ -285,8 +285,8 @@ class Stream[T](ResultStages):
 			tuple[MemoryObjectSendStream[Any], MemoryObjectReceiveStream[Any]]
 		] = []
 
-		# Source → first process channel (unbounded so source never blocks on process)
-		channels.append(anyio.create_memory_object_stream[Any](math.inf))
+		# Source → first process channel (use first process's buffer_size for backpressure)
+		channels.append(anyio.create_memory_object_stream[Any](processes[0].config.buffer_size))
 
 		# Inter-process + final output channels
 		for process in processes:
