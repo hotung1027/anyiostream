@@ -842,6 +842,30 @@ class TestMemoryBufferIntegration:
 		assert len(result) == 10
 		assert all(len(item) == 1025 for item in result)
 
+	async def test_max_buffer_bytes_default_value(self) -> None:
+		"""Test that max_buffer_bytes defaults to 10MB (10_000_000 bytes)."""
+		# Test 1: ProcessConfig default
+		config = ProcessConfig()
+		assert config.max_buffer_bytes == 10_000_000, \
+			f"Expected default max_buffer_bytes=10_000_000, got {config.max_buffer_bytes}"
+
+		# Test 2: Stream methods work with the default
+		result = await (
+			Stream.from_iterable(range(10))
+			.map(lambda x: x * 2)  # No max_buffer_bytes specified, should use default
+			.collect()
+		)
+		assert result == [x * 2 for x in range(10)]
+
+		# Test 3: Multi-stage pipeline with default
+		result = await (
+			Stream.from_iterable(['a', 'b', 'c'])
+			.filter(lambda x: x != 'b')
+			.flat_map(lambda x: [x, x.upper()])
+			.collect()
+		)
+		assert result == ['a', 'A', 'c', 'C']
+
 	async def test_max_buffer_bytes_with_custom_size_func(self) -> None:
 		"""Test max_buffer_bytes with custom size_func."""
 		items = list(range(100))

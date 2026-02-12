@@ -101,7 +101,7 @@ class ProcessConfig:
 
 	workers: int = 1
 	buffer_size: float = 0
-	max_buffer_bytes: int | None = None
+	max_buffer_bytes: int = 10_000_000  # 10MB default
 	size_func: Callable[[Any], int] | None = None
 	name: str | None = None
 
@@ -110,7 +110,7 @@ class ProcessConfig:
 			raise ValueError(f"workers must be >= 1, got {self.workers}")
 		if self.buffer_size < 0:
 			raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
-		if self.max_buffer_bytes is not None and self.max_buffer_bytes <= 0:
+		if self.max_buffer_bytes <= 0:
 			raise ValueError(f"max_buffer_bytes must be > 0, got {self.max_buffer_bytes}")
 
 
