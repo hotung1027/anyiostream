@@ -67,18 +67,18 @@ class ProcessConfig:
 
 			Choosing buffer_size:
 			- For smooth pipeline flow: Set buffer_size to accommodate the expected
-			  output volume from fast stages. This prevents fast stages from blocking
-			  unnecessarily while still maintaining bounded memory usage.
-			  Example: If Stage 1 produces 100 items in 1s and Stage 2 takes 10s to
-			  process them, use buffer_size=100 to let Stage 1 complete without blocking.
+				output volume from fast stages. This prevents fast stages from blocking
+				unnecessarily while still maintaining bounded memory usage.
+				Example: If Stage 1 produces 100 items in 1s and Stage 2 takes 10s to
+				process them, use buffer_size=100 to let Stage 1 complete without blocking.
 
 			- For tight memory constraints: Use buffer_size=0 (rendezvous) or small
-			  values (e.g., 1-10) to minimize memory usage. This causes fast stages
-			  to block and wait for slow stages, reducing parallelism.
+				values (e.g., 1-10) to minimize memory usage. This causes fast stages
+				to block and wait for slow stages, reducing parallelism.
 
 			- For maximum throughput with unbounded input: Use buffer_size equal to
-			  the number of workers in the next stage, or slightly larger to ensure
-			  workers always have items available.
+				the number of workers in the next stage, or slightly larger to ensure
+				workers always have items available.
 
 		max_buffer_bytes: Memory-based buffer limit in bytes.
 			Defaults to 10_000_000 (10MB).
@@ -120,7 +120,9 @@ class ProcessConfig:
 		if self.buffer_size < 0:
 			raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
 		if self.max_buffer_bytes <= 0:
-			raise ValueError(f"max_buffer_bytes must be > 0, got {self.max_buffer_bytes}")
+			raise ValueError(
+				f"max_buffer_bytes must be > 0, got {self.max_buffer_bytes}"
+			)
 
 
 # ---------------------------------------------------------------------------
@@ -466,8 +468,8 @@ class MemoryBuffer:
 	2. Tracks cumulative memory usage with pluggable size calculation
 	3. Holds items in internal buffer when memory limit would be exceeded
 	4. Forwards items to downstream when:
-	   - Memory budget allows (current_memory + item_size <= max_buffer_bytes)
-	   - Downstream has capacity (send won't block indefinitely)
+		- Memory budget allows (current_memory + item_size <= max_buffer_bytes)
+		- Downstream has capacity (send won't block indefinitely)
 	5. Provides backpressure by buffering items rather than blocking upstream
 
 	This approach allows fast stages to produce freely while maintaining memory limits.
@@ -602,4 +604,3 @@ class MemoryBuffer:
 			async with anyio.create_task_group() as tg:
 				tg.start_soon(receive_from_upstream)
 				tg.start_soon(send_to_downstream)
-
