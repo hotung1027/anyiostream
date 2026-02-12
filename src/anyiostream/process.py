@@ -57,7 +57,28 @@ class ProcessConfig:
 		workers: Number of concurrent workers for this process.
 			1 = sequential processing, N > 1 = fan-out via stream cloning.
 		buffer_size: Backpressure buffer between this process and the next.
-			0 = rendezvous (strongest backpressure), math.inf = unbounded.
+			Controls how many items can be queued waiting for downstream processing.
+
+			Values:
+			- 0 = rendezvous (strongest backpressure, synchronous handoff)
+			- N > 0 = bounded buffer of size N
+			- math.inf = unbounded (no backpressure, potential memory bloat)
+
+			Choosing buffer_size:
+			- For smooth pipeline flow: Set buffer_size to accommodate the expected
+			  output volume from fast stages. This prevents fast stages from blocking
+			  unnecessarily while still maintaining bounded memory usage.
+			  Example: If Stage 1 produces 100 items in 1s and Stage 2 takes 10s to
+			  process them, use buffer_size=100 to let Stage 1 complete without blocking.
+
+			- For tight memory constraints: Use buffer_size=0 (rendezvous) or small
+			  values (e.g., 1-10) to minimize memory usage. This causes fast stages
+			  to block and wait for slow stages, reducing parallelism.
+
+			- For maximum throughput with unbounded input: Use buffer_size equal to
+			  the number of workers in the next stage, or slightly larger to ensure
+			  workers always have items available.
+
 		name: Optional human-readable label for debugging / tracing.
 	"""
 

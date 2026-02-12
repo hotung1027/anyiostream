@@ -710,3 +710,107 @@ class TestBackpressure:
 				f"\n  Stage 1 blocked by backpressure: {last_stage1_end - stage1_ends[3]:.3f}s"
 				f"\n  Pipeline demonstrates backpressure control"
 			)
+
+	@pytest.mark.anyio
+	async def test_buffer_size_allows_smooth_pipeline_flow(self) -> None:
+		"""
+		Test that appropriate buffer_size allows fast stages to complete
+		without being blocked by slow stages, while still preventing unbounded growth.
+
+		Scenario:
+		- 10 initial items
+		- Stage 1: map(short_task) - 0.1s per item, 1 worker (total: 1s)
+		- Stage 2: map(long_task) - 10s per item, 1 worker (total: 100s)
+		- buffer_size=10 (enough to hold all items from fast stage)
+
+		Expected behavior:
+		- Stage 1 completes all items in ~1s (not blocked)
+		- Items wait in buffer between stages
+		- Stage 2 processes sequentially over ~100s
+		- Total time: ~100s (same as before, but Stage 1 doesn't block)
+
+		This demonstrates the recommended approach:
+		- Buffer size should accommodate the output of fast stages
+		- Prevents fast stages from being blocked unnecessarily
+		- Still maintains backpressure (buffer is bounded)
+		- Pipeline runs smoothly with stages operating independently
+		"""
+		stage1_events: list[tuple[str, int, float]] = []
+		stage2_events: list[tuple[str, int, float]] = []
+		t0 = time.monotonic()
+
+		# Stage 1: Short tasks (0.1s each)
+		async def short_task(x: int) -> int:
+			stage1_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(0.1)
+			stage1_events.append(("end", x, time.monotonic() - t0))
+			return x
+
+		# Stage 2: Long tasks (10s each)
+		async def long_task(x: int) -> int:
+			stage2_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(10.0)
+			stage2_events.append(("end", x, time.monotonic() - t0))
+			return x * 2
+
+		# Multi-stage pipeline with buffer_size=10 (enough for all items)
+		result = await (
+			Stream.from_iterable(range(10))
+			.map(short_task, workers=1, buffer_size=10)  # Buffer can hold all items
+			.map(long_task, workers=1, buffer_size=10)
+			.collect()
+		)
+
+		total_time = time.monotonic() - t0
+
+		assert sorted(result) == [i * 2 for i in range(10)]
+
+		# Total time still ~100s (dominated by Stage 2)
+		assert 95.0 < total_time < 105.0, (
+			f"Expected pipeline to complete in ~100s, "
+			f"but took {total_time:.2f}s"
+		)
+
+		# KEY DIFFERENCE: Stage 1 completes quickly without blocking
+		stage1_starts = [t for ev, _, t in stage1_events if ev == "start"]
+		stage1_ends = [t for ev, _, t in stage1_events if ev == "end"]
+
+		if len(stage1_ends) >= 10:
+			total_stage1_duration = stage1_ends[9] - stage1_starts[0]
+			# Stage 1 should complete all items in ~1s (10 × 0.1s)
+			assert total_stage1_duration < 2.0, (
+				f"Stage 1 should complete all items in ~1s without blocking, "
+				f"but took {total_stage1_duration:.2f}s"
+			)
+
+		# Stage 2 still processes sequentially (same as before)
+		stage2_starts = [t for ev, _, t in stage2_events if ev == "start"]
+		stage2_ends = [t for ev, _, t in stage2_events if ev == "end"]
+		if len(stage2_starts) >= 2:
+			stage2_start_spread = max(stage2_starts) - min(stage2_starts)
+			assert 85.0 < stage2_start_spread < 95.0, (
+				f"Stage 2 should have starts spread over ~90s, "
+				f"but spread was {stage2_start_spread:.2f}s"
+			)
+
+		# Verify pipeline overlap: Stage 2 starts before Stage 1 completes
+		if stage1_ends and stage2_starts:
+			first_stage2_start = min(stage2_starts)
+			last_stage1_end = max(stage1_ends)
+
+			assert first_stage2_start < last_stage1_end, (
+				f"Pipeline stages should overlap: Stage 2 should start before Stage 1 completes."
+			)
+
+			print(
+				f"\nPipeline timing (buffer_size=10, smooth flow):"
+				f"\n  First Stage 1 end: {min(stage1_ends):.3f}s"
+				f"\n  Last Stage 1 end: {last_stage1_end:.3f}s"
+				f"\n  First Stage 2 start: {first_stage2_start:.3f}s"
+				f"\n  Last Stage 2 start: {max(stage2_starts):.3f}s"
+				f"\n  First Stage 2 end: {min(stage2_ends):.3f}s"
+				f"\n  Last Stage 2 end: {max(stage2_ends):.3f}s"
+				f"\n  Total time: {total_time:.3f}s"
+				f"\n  Stage 1 NOT blocked - completed in ~1s"
+				f"\n  Pipeline runs smoothly with appropriate buffer_size"
+			)
