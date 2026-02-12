@@ -1,21 +1,16 @@
 """
-Tests for Result-aware pipeline stages.
+Tests for Result types — Ok, Err, PipelineError.
 
-Covers Ok/Err types, try_map (with err= param), try_flat_map, try_filter,
-try_foreach, recover, ok_only, errors_only, collect_split, pipe operator
-syntax, backward compatibility, and concurrent Result processing.
+Covers Ok/Err construction, methods, frozen behavior, match/case,
+and PipelineError context fields.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from anyiostream import Err, Ok, PipelineError, Stream, pipe
+from anyiostream import Err, Ok, PipelineError
 
-# =========================================================================
-# Result types
-# =========================================================================
-# Mark @pytest.mark.anyio on all test functions in the module
 pytestmark = pytest.mark.anyio
 
 
@@ -121,16 +116,13 @@ class TestPipelineError:
 		assert err.traceback == "tb"
 
 
-# =========================================================================
-# try_map
-# =========================================================================
-
-
 class TestTryMap:
 	"""Test try_map: raw T -> Result[U, PipelineError], with err= param."""
 
 	@pytest.mark.anyio
 	async def test_all_success(self) -> None:
+		from anyiostream import Stream
+
 		result = await (
 			Stream.from_iterable([1, 2, 3]).try_map(lambda x: x * 10).collect()
 		)
@@ -140,6 +132,8 @@ class TestTryMap:
 
 	@pytest.mark.anyio
 	async def test_one_error(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -161,6 +155,8 @@ class TestTryMap:
 
 	@pytest.mark.anyio
 	async def test_all_error(self) -> None:
+		from anyiostream import Stream
+
 		def boom(x: int) -> int:
 			raise RuntimeError(f"fail-{x}")
 
@@ -170,6 +166,8 @@ class TestTryMap:
 
 	@pytest.mark.anyio
 	async def test_async_func(self) -> None:
+		from anyiostream import Stream
+
 		async def double(x: int) -> int:
 			return x * 2
 
@@ -179,6 +177,8 @@ class TestTryMap:
 
 	@pytest.mark.anyio
 	async def test_async_func_error(self) -> None:
+		from anyiostream import Stream
+
 		async def fail(x: int) -> int:
 			raise TypeError("async boom")
 
@@ -190,6 +190,7 @@ class TestTryMap:
 	@pytest.mark.anyio
 	async def test_err_handler(self) -> None:
 		"""try_map with err= transforms Err items."""
+		from anyiostream import Stream
 
 		def risky(x: int) -> int:
 			if x == 2:
@@ -211,6 +212,7 @@ class TestTryMap:
 	@pytest.mark.anyio
 	async def test_err_passes_through(self) -> None:
 		"""Without err=, Err items pass through unchanged."""
+		from anyiostream import Stream
 
 		def risky(x: int) -> int:
 			if x == 2:
@@ -232,6 +234,7 @@ class TestTryMap:
 	@pytest.mark.anyio
 	async def test_new_error_in_try_map(self) -> None:
 		"""If try_map's func raises, the item becomes a new Err."""
+		from anyiostream import Stream
 
 		def second_fail(x: int) -> int:
 			if x == 30:
@@ -252,16 +255,13 @@ class TestTryMap:
 		assert errs[0].error.item == 30  # the unwrapped Ok value
 
 
-# =========================================================================
-# try_flat_map
-# =========================================================================
-
-
 class TestTryFlatMap:
 	"""Test try_flat_map: each sub-item wrapped as Ok, exception -> Err."""
 
 	@pytest.mark.anyio
 	async def test_success(self) -> None:
+		from anyiostream import Stream
+
 		result = await (
 			Stream.from_iterable([1, 2]).try_flat_map(lambda x: [x, x * 10]).collect()
 		)
@@ -270,6 +270,8 @@ class TestTryFlatMap:
 
 	@pytest.mark.anyio
 	async def test_error(self) -> None:
+		from anyiostream import Stream
+
 		def explode(x: int) -> list[int]:
 			if x == 2:
 				raise ValueError("flat boom")
@@ -285,6 +287,7 @@ class TestTryFlatMap:
 	@pytest.mark.anyio
 	async def test_err_handler(self) -> None:
 		"""try_flat_map with err= transforms Err items."""
+		from anyiostream import Stream
 
 		def explode(x: int) -> list[int]:
 			if x == 2:
@@ -304,16 +307,13 @@ class TestTryFlatMap:
 		assert errs[0].error == "err:2"
 
 
-# =========================================================================
-# try_filter
-# =========================================================================
-
-
 class TestTryFilter:
 	"""Test try_filter: filter Ok values, Err always passes through."""
 
 	@pytest.mark.anyio
 	async def test_filters_ok(self) -> None:
+		from anyiostream import Stream
+
 		result = await (
 			Stream.from_iterable([1, 2, 3, 4])
 			.try_map(lambda x: x)
@@ -325,6 +325,8 @@ class TestTryFilter:
 
 	@pytest.mark.anyio
 	async def test_err_always_passes(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 3:
 				raise ValueError("boom")
@@ -342,16 +344,13 @@ class TestTryFilter:
 		assert len(errs) == 1  # Err for x=3 still passes through
 
 
-# =========================================================================
-# try_foreach
-# =========================================================================
-
-
 class TestTryForeach:
 	"""Test try_foreach: side-effect on Ok values, with err= for Err."""
 
 	@pytest.mark.anyio
 	async def test_side_effect(self) -> None:
+		from anyiostream import Stream
+
 		seen: list[int] = []
 
 		result = await (
@@ -365,6 +364,8 @@ class TestTryForeach:
 
 	@pytest.mark.anyio
 	async def test_err_not_inspected(self) -> None:
+		from anyiostream import Stream
+
 		seen: list[int] = []
 
 		def risky(x: int) -> int:
@@ -384,6 +385,8 @@ class TestTryForeach:
 	@pytest.mark.anyio
 	async def test_err_handler(self) -> None:
 		"""try_foreach with err= calls handler on Err items."""
+		from anyiostream import Stream
+
 		seen_ok: list[int] = []
 		seen_err: list[str] = []
 
@@ -406,16 +409,13 @@ class TestTryForeach:
 		assert len(result) == 3
 
 
-# =========================================================================
-# recover
-# =========================================================================
-
-
 class TestRecover:
 	"""Test recover: Err -> value via func, Ok -> unwrapped."""
 
 	@pytest.mark.anyio
 	async def test_recover_all(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -431,6 +431,8 @@ class TestRecover:
 
 	@pytest.mark.anyio
 	async def test_recover_uses_error_context(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -445,16 +447,13 @@ class TestRecover:
 		assert sorted(result) == [10, 30, 200]
 
 
-# =========================================================================
-# ok_only / errors_only
-# =========================================================================
-
-
 class TestOkOnly:
 	"""Test ok_only: keep Ok values unwrapped, drop Err."""
 
 	@pytest.mark.anyio
 	async def test_ok_only(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -472,6 +471,8 @@ class TestErrorsOnly:
 
 	@pytest.mark.anyio
 	async def test_errors_only(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -485,16 +486,13 @@ class TestErrorsOnly:
 		assert result[0].item == 2
 
 
-# =========================================================================
-# collect_split
-# =========================================================================
-
-
 class TestCollectSplit:
 	"""Test collect_split: partition into (oks, errs)."""
 
 	@pytest.mark.anyio
 	async def test_split(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -507,6 +505,8 @@ class TestCollectSplit:
 
 	@pytest.mark.anyio
 	async def test_all_ok(self) -> None:
+		from anyiostream import Stream
+
 		oks, errs = await (
 			Stream.from_iterable([1, 2]).try_map(lambda x: x).collect_split()
 		)
@@ -515,6 +515,8 @@ class TestCollectSplit:
 
 	@pytest.mark.anyio
 	async def test_all_err(self) -> None:
+		from anyiostream import Stream
+
 		def boom(x: int) -> int:
 			raise RuntimeError("fail")
 
@@ -523,16 +525,13 @@ class TestCollectSplit:
 		assert len(errs) == 2
 
 
-# =========================================================================
-# Pipe operator with Result
-# =========================================================================
-
-
 class TestPipeOperatorResult:
 	"""Test Result operations via pipe | syntax."""
 
 	@pytest.mark.anyio
 	async def test_try_map_pipe(self) -> None:
+		from anyiostream import Stream, pipe
+
 		result = await (
 			Stream.from_iterable([1, 2, 3])
 			| pipe.try_map(lambda x: x * 10)
@@ -543,6 +542,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_full_pipe_chain(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -562,6 +563,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_collect_split(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -575,6 +578,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_ok_only(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -590,6 +595,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_errors_only(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -606,6 +613,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_recover(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -621,6 +630,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_try_map_with_err(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 2:
 				raise ValueError("boom")
@@ -638,6 +649,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_try_foreach(self) -> None:
+		from anyiostream import Stream, pipe
+
 		seen: list[int] = []
 
 		result = await (
@@ -651,6 +664,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_try_flat_map(self) -> None:
+		from anyiostream import Stream, pipe
+
 		result = await (
 			Stream.from_iterable([1, 2])
 			| pipe.try_flat_map(lambda x: [x, x * 10])
@@ -661,6 +676,8 @@ class TestPipeOperatorResult:
 
 	@pytest.mark.anyio
 	async def test_pipe_try_filter(self) -> None:
+		from anyiostream import Stream, pipe
+
 		def risky(x: int) -> int:
 			if x == 3:
 				raise ValueError("boom")
@@ -678,17 +695,13 @@ class TestPipeOperatorResult:
 		assert len(errs) == 1
 
 
-# =========================================================================
-# Backward compatibility
-# =========================================================================
-
-
 class TestBackwardCompat:
 	"""Verify existing non-Result pipeline behavior is unchanged."""
 
 	@pytest.mark.anyio
 	async def test_map_error_still_skips(self) -> None:
 		"""Original map() should still skip items on error."""
+		from anyiostream import Stream
 
 		def risky(x: int) -> int:
 			if x == 2:
@@ -700,6 +713,8 @@ class TestBackwardCompat:
 
 	@pytest.mark.anyio
 	async def test_filter_error_still_skips(self) -> None:
+		from anyiostream import Stream
+
 		def risky_pred(x: int) -> bool:
 			if x == 3:
 				raise ValueError("boom")
@@ -711,14 +726,11 @@ class TestBackwardCompat:
 	@pytest.mark.anyio
 	async def test_plain_map_no_result_wrapping(self) -> None:
 		"""Regular map should return plain values, not wrapped in Ok."""
+		from anyiostream import Stream
+
 		result = await Stream.from_iterable([1, 2]).map(lambda x: x * 10).collect()
 		assert result == [10, 20]
 		assert not isinstance(result[0], Ok)
-
-
-# =========================================================================
-# Concurrent Result processing
-# =========================================================================
 
 
 class TestConcurrentResult:
@@ -726,6 +738,8 @@ class TestConcurrentResult:
 
 	@pytest.mark.anyio
 	async def test_try_map_workers(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 5:
 				raise ValueError("boom")
@@ -743,6 +757,8 @@ class TestConcurrentResult:
 
 	@pytest.mark.anyio
 	async def test_try_map_with_err_workers(self) -> None:
+		from anyiostream import Stream
+
 		def risky(x: int) -> int:
 			if x == 3:
 				raise ValueError("boom")
@@ -762,6 +778,7 @@ class TestConcurrentResult:
 	@pytest.mark.anyio
 	async def test_chained_result_pipeline_workers(self) -> None:
 		"""Full multi-stage Result pipeline with concurrency."""
+		from anyiostream import Stream
 
 		def step1(x: int) -> int:
 			if x == 5:
