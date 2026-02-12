@@ -53,6 +53,8 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[U]]:
 		"""
@@ -62,6 +64,8 @@ class _Pipe:
 			func: Transform function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer (item count).
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
 		Returns:
@@ -73,6 +77,8 @@ class _Pipe:
 				func,
 				workers=workers,
 				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
 				name=name,
 			)
 
@@ -84,6 +90,8 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[U]]:
 		"""
@@ -93,6 +101,8 @@ class _Pipe:
 			func: Function returning iterable or async iterable.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
 		Returns:
@@ -101,7 +111,12 @@ class _Pipe:
 
 		def _apply(stream: Stream[T]) -> Stream[U]:
 			return stream.flat_map(
-				func, workers=workers, buffer_size=buffer_size, name=name
+				func,
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
 			)
 
 		return _apply
@@ -112,6 +127,8 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[T]]:
 		"""
@@ -121,6 +138,8 @@ class _Pipe:
 			predicate: Filter function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
 		Returns:
@@ -129,7 +148,12 @@ class _Pipe:
 
 		def _apply(stream: Stream[T]) -> Stream[T]:
 			return stream.filter(
-				predicate, workers=workers, buffer_size=buffer_size, name=name
+				predicate,
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
 			)
 
 		return _apply
@@ -140,6 +164,8 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[T]]:
 		"""
@@ -149,6 +175,8 @@ class _Pipe:
 			func: Side-effect function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
 		Returns:
@@ -157,7 +185,12 @@ class _Pipe:
 
 		def _apply(stream: Stream[T]) -> Stream[T]:
 			return stream.foreach(
-				func, workers=workers, buffer_size=buffer_size, name=name
+				func,
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
 			)
 
 		return _apply

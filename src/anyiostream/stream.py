@@ -50,7 +50,7 @@ from anyio.streams.memory import (
 	MemoryObjectSendStream,
 )
 
-from anyiostream.process import Process, ProcessConfig, ProcessKind, ResultStages
+from anyiostream.process import MemoryBuffer, Process, ProcessConfig, ProcessKind, ResultStages
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -151,6 +151,8 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[U]:
 		"""
@@ -160,6 +162,10 @@ class Stream[T](ResultStages):
 			func: Transform function ``T -> U``.
 			workers: Concurrent workers for this process.
 			buffer_size: Backpressure buffer to downstream (item count).
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+				When set, enables MemoryBuffer for memory-aware buffering.
+			size_func: Optional function to calculate item size in bytes.
+				Only used when max_buffer_bytes is specified.
 			name: Label for tracing.
 		"""
 		process: Process[T, U] = Process(
@@ -168,6 +174,8 @@ class Stream[T](ResultStages):
 			config=ProcessConfig(
 				workers=workers,
 				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
 				name=name,
 			),
 		)
@@ -179,6 +187,8 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[U]:
 		"""
@@ -188,12 +198,22 @@ class Stream[T](ResultStages):
 			func: Transform function ``T -> Iterable[U]`` or ``T -> AsyncIterable[U]``.
 			workers: Concurrent workers for this process.
 			buffer_size: Backpressure buffer to downstream.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+				When set, enables MemoryBuffer for memory-aware buffering.
+			size_func: Optional function to calculate item size in bytes.
+				Only used when max_buffer_bytes is specified.
 			name: Label for tracing.
 		"""
 		process: Process[T, U] = Process(
 			kind=ProcessKind.FLAT_MAP,
 			func=func,
-			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+			config=ProcessConfig(
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
+			),
 		)
 		return Stream(self._source_factory, [*self._processes, process])
 
@@ -203,6 +223,8 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[T]:
 		"""
@@ -212,12 +234,22 @@ class Stream[T](ResultStages):
 			predicate: Filter function ``T -> bool``.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer to downstream.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+				When set, enables MemoryBuffer for memory-aware buffering.
+			size_func: Optional function to calculate item size in bytes.
+				Only used when max_buffer_bytes is specified.
 			name: Label for tracing.
 		"""
 		process: Process[T, T] = Process(
 			kind=ProcessKind.FILTER,
 			func=predicate,
-			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+			config=ProcessConfig(
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
+			),
 		)
 		return Stream(self._source_factory, [*self._processes, process])
 
@@ -227,6 +259,8 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
+		max_buffer_bytes: int | None = None,
+		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[T]:
 		"""
@@ -238,12 +272,22 @@ class Stream[T](ResultStages):
 			func: Side-effect function ``T -> None``.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer to downstream.
+			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+				When set, enables MemoryBuffer for memory-aware buffering.
+			size_func: Optional function to calculate item size in bytes.
+				Only used when max_buffer_bytes is specified.
 			name: Label for tracing.
 		"""
 		process: Process[T, T] = Process(
 			kind=ProcessKind.FOREACH,
 			func=func,
-			config=ProcessConfig(workers=workers, buffer_size=buffer_size, name=name),
+			config=ProcessConfig(
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
+			),
 		)
 		return Stream(self._source_factory, [*self._processes, process])
 
@@ -258,6 +302,9 @@ class Stream[T](ResultStages):
 
 		Runs inside ``async with create_task_group()`` so every spawned
 		task either completes or is cancelled when the block exits.
+
+		When a process has max_buffer_bytes set, integrates MemoryBuffer:
+		  upstream → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → process
 
 		Usage::
 
@@ -284,23 +331,34 @@ class Stream[T](ResultStages):
 		#
 		# ch0       : between source and first process
 		# ch1..chN  : between process[i-1] and process[i], then final output
+		#
+		# When max_buffer_bytes is set for a process:
+		#   upstream → [unbounded] → MemoryBuffer → [bounded] → process
 
 		channels: list[
 			tuple[MemoryObjectSendStream[Any], MemoryObjectReceiveStream[Any]]
 		] = []
 
-		# Source → first process channel (use first process's buffer_size for backpressure)
-		channels.append(anyio.create_memory_object_stream[Any](
-			processes[0].config.buffer_size
-		))
+		# Source → first process channel
+		# If first process uses MemoryBuffer, source channel is unbounded
+		if processes[0].config.max_buffer_bytes is not None:
+			channels.append(anyio.create_memory_object_stream[Any](math.inf))
+		else:
+			channels.append(anyio.create_memory_object_stream[Any](
+				processes[0].config.buffer_size
+			))
 
 		# Inter-process + final output channels
-		for process in processes:
-			channels.append(
-				anyio.create_memory_object_stream[Any](
-					process.config.buffer_size
+		for i, process in enumerate(processes):
+			# If this process uses MemoryBuffer, next channel is unbounded
+			if i + 1 < len(processes) and processes[i + 1].config.max_buffer_bytes is not None:
+				channels.append(anyio.create_memory_object_stream[Any](math.inf))
+			else:
+				channels.append(
+					anyio.create_memory_object_stream[Any](
+						process.config.buffer_size
+					)
 				)
-			)
 
 		output_recv = channels[-1][1]
 
@@ -308,9 +366,29 @@ class Stream[T](ResultStages):
 			# 1. Source producer
 			tg.start_soon(self._source_factory, channels[0][0])
 
-			# 2. Each process: reads from channels[i] → writes to channels[i+1]
+			# 2. Each process with optional MemoryBuffer integration
 			for i, process in enumerate(processes):
-				tg.start_soon(process.run, channels[i][1], channels[i + 1][0])
+				if process.config.max_buffer_bytes is not None:
+					# Create MemoryBuffer layer
+					# upstream → [unbounded recv from channels[i]] → MemoryBuffer → [bounded] → process → [channels[i+1]]
+					memory_buffer = MemoryBuffer(
+						max_buffer_bytes=process.config.max_buffer_bytes,
+						size_func=process.config.size_func,
+					)
+
+					# Create bounded channel between MemoryBuffer and process
+					mb_send, mb_recv = anyio.create_memory_object_stream[Any](
+						process.config.buffer_size
+					)
+
+					# Start MemoryBuffer: reads from upstream, writes to mb_send
+					tg.start_soon(memory_buffer.run, channels[i][1], mb_send)
+
+					# Start process: reads from mb_recv, writes to downstream
+					tg.start_soon(process.run, mb_recv, channels[i + 1][0])
+				else:
+					# Normal process without MemoryBuffer
+					tg.start_soon(process.run, channels[i][1], channels[i + 1][0])
 
 			# 3. Yield the final output stream to the caller
 			try:

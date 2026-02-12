@@ -80,11 +80,29 @@ class ProcessConfig:
 			  the number of workers in the next stage, or slightly larger to ensure
 			  workers always have items available.
 
+		max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			When specified, enables MemoryBuffer integration which tracks actual memory usage.
+			The architecture becomes:
+			Process → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → Process
+
+			This prevents OOM by capping memory usage rather than item count.
+			MemoryBuffer receives items without blocking upstream and forwards them to
+			downstream when memory budget allows.
+
+			Example: max_buffer_bytes=10_000_000 (10MB limit)
+
+		size_func: Optional function to calculate item size in bytes.
+			Only used when max_buffer_bytes is specified.
+			If None, MemoryBuffer uses smart default estimation for common types.
+			Signature: Callable[[Any], int]
+
 		name: Optional human-readable label for debugging / tracing.
 	"""
 
 	workers: int = 1
 	buffer_size: float = 0
+	max_buffer_bytes: int | None = None
+	size_func: Callable[[Any], int] | None = None
 	name: str | None = None
 
 	def __post_init__(self) -> None:
@@ -92,6 +110,8 @@ class ProcessConfig:
 			raise ValueError(f"workers must be >= 1, got {self.workers}")
 		if self.buffer_size < 0:
 			raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
+		if self.max_buffer_bytes is not None and self.max_buffer_bytes <= 0:
+			raise ValueError(f"max_buffer_bytes must be > 0, got {self.max_buffer_bytes}")
 
 
 # ---------------------------------------------------------------------------
@@ -443,8 +463,7 @@ class MemoryBuffer:
 
 	This approach allows fast stages to produce freely while maintaining memory limits.
 
-	Note: This class is not yet integrated into the Stream pipeline.
-	      Integration requires further research on recv/send control.
+	Enabled by setting max_buffer_bytes in ProcessConfig.
 	"""
 
 	def __init__(
