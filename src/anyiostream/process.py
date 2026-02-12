@@ -61,7 +61,7 @@ class ProcessConfig:
 
 			Values:
 			- 0 = rendezvous (strongest backpressure, synchronous handoff)
-			- N > 0 = bounded buffer of size N
+			- N > 0 = bounded buffer of size N items
 			- math.inf = unbounded (no backpressure, potential memory bloat)
 
 			Choosing buffer_size:
@@ -79,11 +79,29 @@ class ProcessConfig:
 			  the number of workers in the next stage, or slightly larger to ensure
 			  workers always have items available.
 
+			Note: If max_buffer_bytes is specified, buffer_size is ignored.
+
+		max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			When specified, the effective buffer size is calculated as:
+			max_buffer_bytes / estimated_item_size_bytes
+
+			This prevents OOM by capping memory usage rather than item count.
+			The estimated item size defaults to 1024 bytes but can be overridden
+			with item_size_hint.
+
+			Example: max_buffer_bytes=10_000_000 (10MB) with 1KB items = ~10,000 items
+
+		item_size_hint: Estimated average size of items in bytes.
+			Only used when max_buffer_bytes is specified.
+			Defaults to 1024 bytes if not provided.
+
 		name: Optional human-readable label for debugging / tracing.
 	"""
 
 	workers: int = 1
 	buffer_size: float = 0
+	max_buffer_bytes: int | None = None
+	item_size_hint: int = 1024
 	name: str | None = None
 
 	def __post_init__(self) -> None:
@@ -91,6 +109,24 @@ class ProcessConfig:
 			raise ValueError(f"workers must be >= 1, got {self.workers}")
 		if self.buffer_size < 0:
 			raise ValueError(f"buffer_size must be >= 0, got {self.buffer_size}")
+		if self.max_buffer_bytes is not None and self.max_buffer_bytes <= 0:
+			raise ValueError(f"max_buffer_bytes must be > 0, got {self.max_buffer_bytes}")
+		if self.item_size_hint <= 0:
+			raise ValueError(f"item_size_hint must be > 0, got {self.item_size_hint}")
+
+	def get_effective_buffer_size(self) -> float:
+		"""
+		Calculate the effective buffer size based on configuration.
+
+		Returns:
+			The number of items that can be buffered.
+			If max_buffer_bytes is specified, returns max_buffer_bytes / item_size_hint.
+			Otherwise, returns buffer_size.
+		"""
+		if self.max_buffer_bytes is not None:
+			# Convert to int since anyio requires integer buffer sizes
+			return int(self.max_buffer_bytes / self.item_size_hint)
+		return self.buffer_size
 
 
 # ---------------------------------------------------------------------------

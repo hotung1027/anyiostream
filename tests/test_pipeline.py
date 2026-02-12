@@ -814,3 +814,75 @@ class TestBackpressure:
 				f"\n  Stage 1 NOT blocked - completed in ~0.1s"
 				f"\n  Pipeline runs smoothly with appropriate buffer_size"
 			)
+
+	@pytest.mark.anyio
+	async def test_max_buffer_bytes_parameter(self) -> None:
+		"""
+		Test memory-based buffering with max_buffer_bytes parameter.
+
+		This test demonstrates using max_buffer_bytes instead of buffer_size
+		to specify memory limits rather than item counts, which helps prevent OOM.
+
+		Scenario:
+		- 10 initial items
+		- Stage 1: Fast tasks (0.01s each), 1 worker
+		- Stage 2: Slow tasks (1s each), 1 worker
+		- max_buffer_bytes=10KB with item_size_hint=1KB = ~10 items
+
+		Expected behavior:
+		- Equivalent to buffer_size=10 (10KB / 1KB per item)
+		- Stage 1 completes all items without blocking
+		- Stage 2 processes sequentially
+		"""
+		stage1_events: list[tuple[str, int, float]] = []
+		stage2_events: list[tuple[str, int, float]] = []
+		t0 = time.monotonic()
+
+		async def fast_task(x: int) -> int:
+			stage1_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(0.01)
+			stage1_events.append(("end", x, time.monotonic() - t0))
+			return x
+
+		async def slow_task(x: int) -> int:
+			stage2_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(1.0)
+			stage2_events.append(("end", x, time.monotonic() - t0))
+			return x * 2
+
+		# Use max_buffer_bytes instead of buffer_size
+		# 10KB with 1KB items = ~10 items buffer
+		result = await (
+			Stream.from_iterable(range(10))
+			.map(fast_task, workers=1, max_buffer_bytes=10_000, item_size_hint=1_000)
+			.map(slow_task, workers=1, max_buffer_bytes=10_000, item_size_hint=1_000)
+			.collect()
+		)
+
+		total_time = time.monotonic() - t0
+
+		assert sorted(result) == [i * 2 for i in range(10)]
+
+		# Should behave like buffer_size=10
+		assert 9.5 < total_time < 11.0, (
+			f"Expected pipeline to complete in ~10s, but took {total_time:.2f}s"
+		)
+
+		# Stage 1 should complete quickly without blocking
+		stage1_starts = [t for ev, _, t in stage1_events if ev == "start"]
+		stage1_ends = [t for ev, _, t in stage1_events if ev == "end"]
+
+		if len(stage1_ends) >= 10:
+			total_stage1_duration = stage1_ends[9] - stage1_starts[0]
+			assert total_stage1_duration < 0.3, (
+				f"Stage 1 should complete in ~0.1s with memory-based buffering, "
+				f"but took {total_stage1_duration:.2f}s"
+			)
+
+		print(
+			f"\nMemory-based buffering test:"
+			f"\n  max_buffer_bytes=10KB, item_size_hint=1KB → effective buffer_size=10"
+			f"\n  Stage 1 duration: {stage1_ends[9] - stage1_starts[0]:.3f}s"
+			f"\n  Total time: {total_time:.3f}s"
+			f"\n  Memory-based buffering prevents OOM while allowing smooth flow"
+		)
