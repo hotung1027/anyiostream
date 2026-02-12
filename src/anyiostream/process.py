@@ -80,16 +80,25 @@ class ProcessConfig:
 			  the number of workers in the next stage, or slightly larger to ensure
 			  workers always have items available.
 
-		max_buffer_bytes: Optional memory-based buffer limit in bytes.
-			When specified, enables MemoryBuffer integration which tracks actual memory usage.
+		max_buffer_bytes: Memory-based buffer limit in bytes.
+			Defaults to 10_000_000 (10MB).
+
+			Enables MemoryBuffer integration which tracks actual memory usage.
 			The architecture becomes:
 			Process → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → Process
 
-			This prevents OOM by capping memory usage rather than item count.
-			MemoryBuffer receives items without blocking upstream and forwards them to
-			downstream when memory budget allows.
+			Benefits:
+			- Prevents OOM by capping memory usage rather than item count
+			- Prevents upstream blocking (unbounded upstream channels)
+			- MemoryBuffer receives items without blocking upstream
+			- Forwards items to downstream when memory budget allows
 
-			Example: max_buffer_bytes=10_000_000 (10MB limit)
+			With the 10MB default:
+			- MemoryBuffer is always enabled, providing memory protection by default
+			- Upstream stages complete quickly without waiting for slow downstream stages
+			- Memory usage is bounded to 10MB per process
+
+			Example: max_buffer_bytes=50_000_000 for a 50MB limit
 
 		size_func: Optional function to calculate item size in bytes.
 			Only used when max_buffer_bytes is specified.
@@ -463,7 +472,9 @@ class MemoryBuffer:
 
 	This approach allows fast stages to produce freely while maintaining memory limits.
 
-	Enabled by setting max_buffer_bytes in ProcessConfig.
+	As of the latest version, MemoryBuffer is enabled by default with a 10MB limit
+	(max_buffer_bytes=10_000_000 in ProcessConfig). This provides memory protection
+	and prevents upstream blocking out of the box.
 	"""
 
 	def __init__(
