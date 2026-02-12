@@ -1137,3 +1137,128 @@ class TestMemoryBufferIntegration:
 			f"\n  Conclusion: Short tasks ARE blocked by long tasks with 2 workers"
 			f"\n  and buffer_size=0 (rendezvous backpressure)"
 		)
+
+	async def test_memory_buffer_prevents_blocking(self) -> None:
+		"""
+		Test that MemoryBuffer prevents Stage 1 from being blocked by Stage 2.
+		
+		Scenario:
+		- 10 initial items
+		- Stage 1: map(short_task) - 0.1s per item, 2 workers
+		- Stage 2: map(long_task) - 2s per item, 2 workers
+		- WITH max_buffer_bytes set on Stage 2
+		
+		Expected behavior with MemoryBuffer:
+		- Source → Stage 1 channel is unbounded (math.inf)
+		- Stage 1 → MemoryBuffer channel is unbounded (math.inf)
+		- MemoryBuffer → Stage 2 channel is bounded (buffer_size)
+		- MemoryBuffer tracks memory usage
+		
+		Architecture:
+		  Stage 1 → MemoryObjectStream(∞) → MemoryBuffer → MemoryObjectStream(buffer_size) → Stage 2
+		
+		With MemoryBuffer, Stage 1 should complete quickly (~0.5s for 10 items with 2 workers)
+		because it doesn't block waiting for Stage 2. The MemoryBuffer absorbs the items
+		and forwards them to Stage 2 as memory allows.
+		
+		Total time: ~0.5s (Stage 1) + 10s (Stage 2 with 2 workers processing 10 items)
+		           = ~10.5s, BUT Stage 1 finishes in ~0.5s (not blocked!)
+		"""
+		stage1_events: list[tuple[str, int, float]] = []
+		stage2_events: list[tuple[str, int, float]] = []
+		t0 = time.monotonic()
+		
+		# Stage 1: Short tasks (0.1s each)
+		async def short_task(x: int) -> int:
+			stage1_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(0.1)
+			stage1_events.append(("end", x, time.monotonic() - t0))
+			return x
+		
+		# Stage 2: Long tasks (2s each)
+		async def long_task(x: int) -> int:
+			stage2_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(2.0)
+			stage2_events.append(("end", x, time.monotonic() - t0))
+			return x * 2
+		
+		# Pipeline with MemoryBuffer on Stage 2
+		result = await (
+			Stream.from_iterable(range(10))
+			.map(short_task, workers=2, buffer_size=0)  # Stage 1: 2 workers, no buffering
+			.map(
+				long_task,
+				workers=2,
+				buffer_size=2,
+				max_buffer_bytes=10 * 1024,  # 10KB memory limit - enables MemoryBuffer!
+			)
+			.collect()
+		)
+		
+		total_time = time.monotonic() - t0
+		
+		assert sorted(result) == [i * 2 for i in range(10)]
+		
+		# Analyze Stage 1 completion time
+		stage1_ends = sorted([t for ev, _, t in stage1_events if ev == "end"])
+		if stage1_ends:
+			stage1_completion = max(stage1_ends)
+			
+			print(
+				f"\nMemoryBuffer test results:"
+				f"\n  Stage 1 completion time: {stage1_completion:.3f}s"
+				f"\n  Total pipeline time: {total_time:.3f}s"
+			)
+			
+			# With MemoryBuffer, Stage 1 should complete quickly!
+			# 10 items / 2 workers = 5 batches (but with unbounded upstream)
+			# Each item takes 0.1s, so with 2 workers in parallel:
+			# Batch 1: items 0,1 (0.1s)
+			# Batch 2: items 2,3 (0.1s) - can start immediately!
+			# Batch 3: items 4,5 (0.1s)
+			# Batch 4: items 6,7 (0.1s)
+			# Batch 5: items 8,9 (0.1s)
+			# Total: ~0.5s (NOT 10s!)
+			assert stage1_completion < 1.0, (
+				f"With MemoryBuffer, Stage 1 should complete in ~0.5s, "
+				f"but took {stage1_completion:.2f}s. "
+				f"This indicates Stage 1 is still being blocked!"
+			)
+			
+			# Verify Stage 1 is NOT blocked - check gaps between batches
+			stage1_starts = sorted([t for ev, _, t in stage1_events if ev == "start"])
+			if len(stage1_starts) >= 4:
+				# Gap between batches should be small (~0.1s), NOT ~2s
+				gaps = []
+				for i in range(2, len(stage1_starts), 2):
+					if i < len(stage1_starts):
+						gap = stage1_starts[i] - stage1_starts[i-2]
+						gaps.append(gap)
+				
+				if gaps:
+					avg_gap = sum(gaps) / len(gaps)
+					print(
+						f"\n  Stage 1 batch timing:"
+						f"\n    Average gap between batches: {avg_gap:.3f}s"
+						f"\n    Expected: ~0.1s (not blocked)"
+					)
+					
+					# Gap should be small (~0.1s), indicating no blocking
+					assert avg_gap < 0.3, (
+						f"Stage 1 batch gap should be ~0.1s (not blocked), "
+						f"but was {avg_gap:.2f}s"
+					)
+		
+		# Total pipeline time will still be dominated by Stage 2
+		# Stage 2: 10 items / 2 workers = 5 batches × 2s = ~10s
+		# But Stage 1 finishes in ~0.5s!
+		print(
+			f"\n  Conclusion: With MemoryBuffer, Stage 1 is NOT blocked!"
+			f"\n  Stage 1 completes in ~{stage1_completion:.3f}s (fast!)"
+			f"\n  Pipeline total: ~{total_time:.3f}s (limited by Stage 2)"
+		)
+		
+		# Compare with the blocking test:
+		# - Without MemoryBuffer (test_two_workers_blocking_behavior): Stage 1 takes ~10s
+		# - With MemoryBuffer (this test): Stage 1 takes ~0.5s
+		# This demonstrates the benefit of MemoryBuffer!
