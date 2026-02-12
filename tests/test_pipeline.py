@@ -482,3 +482,65 @@ class TestProcessConfig:
 	def test_invalid_buffer(self) -> None:
 		with pytest.raises(ValueError, match="buffer_size must be >= 0"):
 			ProcessConfig(buffer_size=-1)
+
+
+# =========================================================================
+# Backpressure
+# =========================================================================
+
+
+class TestBackpressure:
+	"""Test that backpressure actually works with long-running tasks."""
+
+	@pytest.mark.anyio
+	async def test_backpressure_with_long_running_tasks(self) -> None:
+		"""
+		Test that source doesn't produce all items immediately when workers
+		are busy with long-running tasks. With proper backpressure, items
+		should only be produced as workers become available.
+		"""
+		produced_items: list[tuple[int, float]] = []
+		consumed_items: list[tuple[int, float]] = []
+		t0 = time.monotonic()
+
+		# Track when items are produced from the source
+		async def tracked_source():
+			for i in range(10):
+				produced_items.append((i, time.monotonic() - t0))
+				yield i
+
+		# Simulate a long-running task
+		async def long_task(x: int) -> int:
+			await anyio.sleep(0.1)  # Each task takes 0.1s
+			consumed_items.append((x, time.monotonic() - t0))
+			return x * 2
+
+		# With buffer_size=0 (rendezvous) and 2 workers, we expect:
+		# - Source should block when workers are busy
+		# - Items should NOT all be produced immediately
+		result = await (
+			Stream.from_iterable(tracked_source())
+			.map(long_task, workers=2, buffer_size=0)
+			.collect()
+		)
+
+		assert sorted(result) == [i * 2 for i in range(10)]
+
+		# Verify backpressure: source should not produce all items immediately
+		# With 10 items, 2 workers, 0.1s per task:
+		# - If no backpressure: all 10 items produced at t=0
+		# - With backpressure: items spread over time as workers become available
+
+		# Check that items were produced gradually, not all at once
+		production_times = [t for _, t in produced_items]
+
+		# At least the last item should be produced significantly later than first
+		# (allowing some variance for scheduling)
+		time_spread = production_times[-1] - production_times[0]
+
+		# With 2 workers processing 10 items at 0.1s each, total time should be ~0.5s
+		# The source should be blocked and producing items gradually, not all at t=0
+		assert time_spread > 0.2, (
+			f"Expected gradual production with backpressure, but time spread was {time_spread:.3f}s. "
+			f"Production times: {production_times}"
+		)
