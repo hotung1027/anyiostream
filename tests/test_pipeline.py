@@ -499,14 +499,14 @@ class TestBackpressure:
 
 		Scenario:
 		- 10 initial items
-		- Stage 1: map(short_task) - 0.1s per item, 10 workers
-		- Stage 2: map(long_task) - 10s per item, 10 workers
+		- Stage 1: map(short_task) - 0.01s per item, 10 workers
+		- Stage 2: map(long_task) - 1s per item, 10 workers
 
 		Expected behavior with proper backpressure and no worker exhaustion:
-		- Stage 1 completes all 10 items in ~0.1s (parallel with 10 workers)
+		- Stage 1 completes all 10 items in ~0.01s (parallel with 10 workers)
 		- Stage 2 processes items as they arrive from Stage 1
 		- With 10 workers on Stage 2, all 10 long tasks run in parallel
-		- Total time: ~0.1s (stage 1) + 10s (stage 2) = ~10.1s ≈ 11s
+		- Total time: ~0.01s (stage 1) + 1s (stage 2) = ~1.01s
 
 		This demonstrates:
 		- Proper pipeline concurrency (stages overlap)
@@ -517,17 +517,17 @@ class TestBackpressure:
 		stage2_events: list[tuple[str, int, float]] = []
 		t0 = time.monotonic()
 
-		# Stage 1: Short tasks (0.1s each)
+		# Stage 1: Short tasks (0.01s each)
 		async def short_task(x: int) -> int:
 			stage1_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(0.1)
+			await anyio.sleep(0.01)
 			stage1_events.append(("end", x, time.monotonic() - t0))
 			return x
 
-		# Stage 2: Long tasks (10s each)
+		# Stage 2: Long tasks (1s each)
 		async def long_task(x: int) -> int:
 			stage2_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(10.0)
+			await anyio.sleep(1.0)
 			stage2_events.append(("end", x, time.monotonic() - t0))
 			return x * 2
 
@@ -543,24 +543,24 @@ class TestBackpressure:
 
 		assert sorted(result) == [i * 2 for i in range(10)]
 
-		# Verify timing: with proper concurrency, should complete in ~11s
-		# Stage 1: ~0.1s (all 10 items processed in parallel)
-		# Stage 2: ~10s (all 10 items processed in parallel)
-		# Total: ~10.1s (with some overlap and overhead, target is ~11s)
-		assert 9.5 < total_time < 12.0, (
-			f"Expected pipeline to complete in ~11s with proper concurrency, "
+		# Verify timing: with proper concurrency, should complete in ~1s
+		# Stage 1: ~0.01s (all 10 items processed in parallel)
+		# Stage 2: ~1s (all 10 items processed in parallel)
+		# Total: ~1.01s (with some overlap and overhead)
+		assert 0.9 < total_time < 1.3, (
+			f"Expected pipeline to complete in ~1s with proper concurrency, "
 			f"but took {total_time:.2f}s. This indicates workers may be blocked or "
 			f"resources exhausted."
 		)
 
-		# Verify stage 1 completed quickly (all items in ~0.1s due to parallelism)
+		# Verify stage 1 completed quickly (all items in ~0.01s due to parallelism)
 		stage1_ends = [t for ev, _, t in stage1_events if ev == "end"]
 		if stage1_ends:
 			stage1_duration = max(stage1_ends) - min(stage1_ends)
 			# With 10 workers, all 10 items should complete nearly simultaneously
-			# Allow up to 0.5s for scheduling overhead
-			assert stage1_duration < 0.5, (
-				f"Stage 1 (short tasks) should complete in ~0.1s with 10 workers, "
+			# Allow up to 0.1s for scheduling overhead
+			assert stage1_duration < 0.1, (
+				f"Stage 1 (short tasks) should complete in ~0.01s with 10 workers, "
 				f"but took {stage1_duration:.2f}s"
 			)
 
@@ -568,8 +568,8 @@ class TestBackpressure:
 		stage2_starts = [t for ev, _, t in stage2_events if ev == "start"]
 		if len(stage2_starts) >= 2:
 			stage2_start_spread = max(stage2_starts) - min(stage2_starts)
-			# All 10 long tasks should start within ~1s as short tasks complete
-			assert stage2_start_spread < 1.5, (
+			# All 10 long tasks should start within ~0.2s as short tasks complete
+			assert stage2_start_spread < 0.3, (
 				f"Stage 2 (long tasks) should start concurrently as Stage 1 completes, "
 				f"but starts spread over {stage2_start_spread:.2f}s. "
 				f"This indicates backpressure or resource issues."
@@ -596,20 +596,20 @@ class TestBackpressure:
 
 		Scenario:
 		- 10 initial items
-		- Stage 1: map(short_task) - 0.1s per item, 1 worker
-		- Stage 2: map(long_task) - 10s per item, 1 worker
+		- Stage 1: map(short_task) - 0.01s per item, 1 worker
+		- Stage 2: map(long_task) - 1s per item, 1 worker
 
 		Expected behavior with 1 worker per stage and buffer_size=2:
 		- Stage 1 processes first few items quickly (until buffer fills)
 		- Then Stage 1 blocks waiting for Stage 2 to consume from buffer
-		- Stage 2 processes items sequentially: 10 × 10s = 100s
+		- Stage 2 processes items sequentially: 10 × 1s = 10s
 		- Due to backpressure, Stage 1 and Stage 2 are tightly coupled:
-		  - Item 0: Stage 1 (0.1s) → buffer → Stage 2 starts (10s)
-		  - Item 1: Stage 1 (0.1s) → buffer fills
-		  - Item 2: Stage 1 (0.1s) → buffer full, blocks
-		  - Item 3: Stage 1 (0.1s) → still blocking
+		  - Item 0: Stage 1 (0.01s) → buffer → Stage 2 starts (1s)
+		  - Item 1: Stage 1 (0.01s) → buffer fills
+		  - Item 2: Stage 1 (0.01s) → buffer full, blocks
+		  - Item 3: Stage 1 (0.01s) → still blocking
 		  - Item 4: Stage 2 finishes item 0 → Stage 1 can proceed
-		- Total time: ~100s (dominated by Stage 2's sequential processing)
+		- Total time: ~10s (dominated by Stage 2's sequential processing)
 
 		This demonstrates:
 		- Sequential processing with limited workers
@@ -620,17 +620,17 @@ class TestBackpressure:
 		stage2_events: list[tuple[str, int, float]] = []
 		t0 = time.monotonic()
 
-		# Stage 1: Short tasks (0.1s each)
+		# Stage 1: Short tasks (0.01s each)
 		async def short_task(x: int) -> int:
 			stage1_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(0.1)
+			await anyio.sleep(0.01)
 			stage1_events.append(("end", x, time.monotonic() - t0))
 			return x
 
-		# Stage 2: Long tasks (10s each)
+		# Stage 2: Long tasks (1s each)
 		async def long_task(x: int) -> int:
 			stage2_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(10.0)
+			await anyio.sleep(1.0)
 			stage2_events.append(("end", x, time.monotonic() - t0))
 			return x * 2
 
@@ -647,10 +647,10 @@ class TestBackpressure:
 		assert sorted(result) == [i * 2 for i in range(10)]
 
 		# Verify timing: with 1 worker per stage, expect sequential processing
-		# Stage 2 dominates: 10 items × 10s = 100s (sequential)
-		# Total should be ~100s
-		assert 95.0 < total_time < 105.0, (
-			f"Expected pipeline to complete in ~100s with 1 worker per stage, "
+		# Stage 2 dominates: 10 items × 1s = 10s (sequential)
+		# Total should be ~10s
+		assert 9.5 < total_time < 11.0, (
+			f"Expected pipeline to complete in ~10s with 1 worker per stage, "
 			f"but took {total_time:.2f}s. This indicates timing issues."
 		)
 
@@ -662,28 +662,28 @@ class TestBackpressure:
 		if len(stage1_starts) >= 4:
 			# First 4 items should process quickly (before buffer backpressure kicks in)
 			first_four_duration = stage1_ends[3] - stage1_starts[0]
-			assert first_four_duration < 0.6, (
-				f"First 4 items in Stage 1 should process quickly (~0.4s), "
+			assert first_four_duration < 0.1, (
+				f"First 4 items in Stage 1 should process quickly (~0.04s), "
 				f"but took {first_four_duration:.2f}s"
 			)
 
 			# Later items are spread out due to backpressure from Stage 2
 			if len(stage1_ends) >= 10:
 				total_stage1_duration = stage1_ends[9] - stage1_starts[0]
-				# Stage 1 is blocked by Stage 2, so total duration approaches 100s
-				assert total_stage1_duration > 50.0, (
+				# Stage 1 is blocked by Stage 2, so total duration approaches 10s
+				assert total_stage1_duration > 5.0, (
 					f"Stage 1 should be blocked by Stage 2 backpressure, "
 					f"but completed in {total_stage1_duration:.2f}s"
 				)
 
-		# Verify stage 2 processes sequentially (items spread over ~100s)
+		# Verify stage 2 processes sequentially (items spread over ~10s)
 		stage2_starts = [t for ev, _, t in stage2_events if ev == "start"]
 		stage2_ends = [t for ev, _, t in stage2_events if ev == "end"]
 		if len(stage2_starts) >= 2:
 			stage2_start_spread = max(stage2_starts) - min(stage2_starts)
-			# With 1 worker, starts should be spread over ~90s (after first one starts)
-			assert 85.0 < stage2_start_spread < 95.0, (
-				f"Stage 2 (long tasks) should have starts spread over ~90s with 1 worker, "
+			# With 1 worker, starts should be spread over ~9s (after first one starts)
+			assert 8.5 < stage2_start_spread < 9.5, (
+				f"Stage 2 (long tasks) should have starts spread over ~9s with 1 worker, "
 				f"but spread was {stage2_start_spread:.2f}s"
 			)
 
@@ -719,15 +719,15 @@ class TestBackpressure:
 
 		Scenario:
 		- 10 initial items
-		- Stage 1: map(short_task) - 0.1s per item, 1 worker (total: 1s)
-		- Stage 2: map(long_task) - 10s per item, 1 worker (total: 100s)
+		- Stage 1: map(short_task) - 0.01s per item, 1 worker (total: 0.1s)
+		- Stage 2: map(long_task) - 1s per item, 1 worker (total: 10s)
 		- buffer_size=10 (enough to hold all items from fast stage)
 
 		Expected behavior:
-		- Stage 1 completes all items in ~1s (not blocked)
+		- Stage 1 completes all items in ~0.1s (not blocked)
 		- Items wait in buffer between stages
-		- Stage 2 processes sequentially over ~100s
-		- Total time: ~100s (same as before, but Stage 1 doesn't block)
+		- Stage 2 processes sequentially over ~10s
+		- Total time: ~10s (same as before, but Stage 1 doesn't block)
 
 		This demonstrates the recommended approach:
 		- Buffer size should accommodate the output of fast stages
@@ -739,17 +739,17 @@ class TestBackpressure:
 		stage2_events: list[tuple[str, int, float]] = []
 		t0 = time.monotonic()
 
-		# Stage 1: Short tasks (0.1s each)
+		# Stage 1: Short tasks (0.01s each)
 		async def short_task(x: int) -> int:
 			stage1_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(0.1)
+			await anyio.sleep(0.01)
 			stage1_events.append(("end", x, time.monotonic() - t0))
 			return x
 
-		# Stage 2: Long tasks (10s each)
+		# Stage 2: Long tasks (1s each)
 		async def long_task(x: int) -> int:
 			stage2_events.append(("start", x, time.monotonic() - t0))
-			await anyio.sleep(10.0)
+			await anyio.sleep(1.0)
 			stage2_events.append(("end", x, time.monotonic() - t0))
 			return x * 2
 
@@ -765,9 +765,9 @@ class TestBackpressure:
 
 		assert sorted(result) == [i * 2 for i in range(10)]
 
-		# Total time still ~100s (dominated by Stage 2)
-		assert 95.0 < total_time < 105.0, (
-			f"Expected pipeline to complete in ~100s, "
+		# Total time still ~10s (dominated by Stage 2)
+		assert 9.5 < total_time < 11.0, (
+			f"Expected pipeline to complete in ~10s, "
 			f"but took {total_time:.2f}s"
 		)
 
@@ -777,9 +777,9 @@ class TestBackpressure:
 
 		if len(stage1_ends) >= 10:
 			total_stage1_duration = stage1_ends[9] - stage1_starts[0]
-			# Stage 1 should complete all items in ~1s (10 × 0.1s)
-			assert total_stage1_duration < 2.0, (
-				f"Stage 1 should complete all items in ~1s without blocking, "
+			# Stage 1 should complete all items in ~0.1s (10 × 0.01s)
+			assert total_stage1_duration < 0.3, (
+				f"Stage 1 should complete all items in ~0.1s without blocking, "
 				f"but took {total_stage1_duration:.2f}s"
 			)
 
@@ -788,8 +788,8 @@ class TestBackpressure:
 		stage2_ends = [t for ev, _, t in stage2_events if ev == "end"]
 		if len(stage2_starts) >= 2:
 			stage2_start_spread = max(stage2_starts) - min(stage2_starts)
-			assert 85.0 < stage2_start_spread < 95.0, (
-				f"Stage 2 should have starts spread over ~90s, "
+			assert 8.5 < stage2_start_spread < 9.5, (
+				f"Stage 2 should have starts spread over ~9s, "
 				f"but spread was {stage2_start_spread:.2f}s"
 			)
 
@@ -811,6 +811,6 @@ class TestBackpressure:
 				f"\n  First Stage 2 end: {min(stage2_ends):.3f}s"
 				f"\n  Last Stage 2 end: {max(stage2_ends):.3f}s"
 				f"\n  Total time: {total_time:.3f}s"
-				f"\n  Stage 1 NOT blocked - completed in ~1s"
+				f"\n  Stage 1 NOT blocked - completed in ~0.1s"
 				f"\n  Pipeline runs smoothly with appropriate buffer_size"
 			)
