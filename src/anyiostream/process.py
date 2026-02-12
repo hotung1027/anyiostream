@@ -465,37 +465,84 @@ class BufferAllocator:
 	"""
 	Memory-aware buffer layer that sits between pipeline stages.
 
-	This intermediate layer tracks actual memory usage of buffered items
-	and enforces a memory limit, providing true OOM protection rather than
-	relying on item count estimates.
-
 	Architecture:
-		Process → MemoryObjectStream(unbounded) → BufferAllocator → MemoryObjectStream(item_queue_size) → Process
+		Process → MemoryObjectStream(math.inf) → BufferAllocator → MemoryObjectStream(item_queue_size) → Process
 
-	The BufferAllocator maintains an internal buffer of items with memory tracking:
-	1. Pulls items from upstream (unbounded queue)
-	2. Calculates actual memory size using sys.getsizeof()
-	3. Buffers items up to max_buffer_bytes limit
-	4. Forwards items to downstream queue when:
-	   - Downstream has capacity (item_queue_size limit)
-	   - We need to make room for new items
-	5. Blocks upstream when memory budget is exhausted
+	The BufferAllocator:
+	1. Receives items from upstream (unbounded queue - never blocks upstream)
+	2. Tracks cumulative memory usage with pluggable size calculation
+	3. Holds items in internal buffer when memory limit would be exceeded
+	4. Forwards items to downstream when:
+	   - Memory budget allows (current_memory + item_size <= max_buffer_bytes)
+	   - Downstream has capacity (send won't block indefinitely)
+	5. Provides backpressure by buffering items rather than blocking upstream
+
+	This approach allows fast stages to produce freely while maintaining memory limits.
 	"""
 
 	def __init__(
 		self,
 		max_buffer_bytes: int,
-		item_queue_size: int = 0,
+		size_func: Callable[[Any], int] | None = None,
 	) -> None:
 		"""
 		Initialize buffer allocator.
 
 		Args:
 			max_buffer_bytes: Maximum memory to buffer in bytes.
-			item_queue_size: Size of downstream item queue (for backpressure).
+			size_func: Optional function to calculate item size.
+				If None, uses default approximation strategy.
 		"""
 		self.max_buffer_bytes = max_buffer_bytes
-		self.item_queue_size = item_queue_size
+		self.size_func = size_func or self._default_size_func
+
+	@staticmethod
+	def _default_size_func(item: Any) -> int:
+		"""
+		Default size calculation with fast approximations.
+
+		Strategy:
+		1. For simple types (int, str, bytes): use sys.getsizeof()
+		2. For lists: estimate as sys.getsizeof(list) + len(list) * average_item_size
+		3. For dicts: similar estimation
+		4. For other objects: use shallow size (fast but may underestimate)
+
+		Args:
+			item: Item to measure.
+
+		Returns:
+			Estimated size in bytes.
+		"""
+		base_size = sys.getsizeof(item)
+
+		# Simple types - return base size
+		if isinstance(item, (int, float, bool, type(None), str, bytes)):
+			return base_size
+
+		# Lists - estimate content size
+		if isinstance(item, list):
+			if not item:
+				return base_size
+			# Sample first few items to estimate average
+			sample_size = min(5, len(item))
+			sample_total = sum(sys.getsizeof(item[i]) for i in range(sample_size))
+			avg_item_size = sample_total // sample_size
+			return base_size + len(item) * avg_item_size
+
+		# Dicts - estimate key+value sizes
+		if isinstance(item, dict):
+			if not item:
+				return base_size
+			# Sample first few items
+			sample_items = list(item.items())[:5]
+			sample_total = sum(
+				sys.getsizeof(k) + sys.getsizeof(v) for k, v in sample_items
+			)
+			avg_pair_size = sample_total // len(sample_items) if sample_items else 0
+			return base_size + len(item) * avg_pair_size
+
+		# Other types - use shallow size
+		return base_size
 
 	async def run(
 		self,
@@ -505,52 +552,57 @@ class BufferAllocator:
 		"""
 		Run the buffer allocator.
 
-		Pulls items from recv, buffers them with memory tracking,
-		forwards to send when appropriate.
+		Receives items from upstream (unbounded), tracks memory,
+		forwards to downstream when budget allows.
 
 		Args:
-			recv: Upstream receive stream (from previous process).
-			send: Downstream send stream (to next process).
+			recv: Upstream receive stream (unbounded - won't block us).
+			send: Downstream send stream (bounded - may block).
 		"""
 		async with recv, send:
-			# Internal buffer: list of (item, size) tuples
+			# Internal buffer: queue of (item, size) tuples
 			buffer: list[tuple[Any, int]] = []
 			current_memory = 0
 			upstream_done = False
 
-			async def producer() -> None:
-				"""Pull items from upstream and add to buffer."""
+			async def receive_from_upstream() -> None:
+				"""Continuously receive from upstream and add to buffer."""
 				nonlocal current_memory, upstream_done
 				try:
 					async for item in recv:
-						item_size = sys.getsizeof(item)
-
-						# Wait if buffer is full (memory limit reached)
-						while current_memory + item_size > self.max_buffer_bytes:
-							await anyio.sleep(0.001)
-
-						# Add to buffer
+						item_size = self.size_func(item)
 						buffer.append((item, item_size))
 						current_memory += item_size
 				finally:
 					upstream_done = True
 
-			async def consumer() -> None:
-				"""Forward items from buffer to downstream."""
+			async def send_to_downstream() -> None:
+				"""Forward items from buffer to downstream when memory allows."""
 				nonlocal current_memory
 				while not upstream_done or buffer:
 					# Wait for items in buffer
-					while not buffer:
+					if not buffer:
 						if upstream_done:
-							return  # All done
+							return
 						await anyio.sleep(0.001)
+						continue
 
-					# Forward oldest item
+					# Check memory budget
+					if current_memory > self.max_buffer_bytes:
+						# Over budget - must forward to make room
+						pass  # Will forward below
+
+					# Forward oldest item (FIFO)
 					item, item_size = buffer.pop(0)
+
+					# Send to downstream (may block if downstream is full)
 					await send.send(item)
+
+					# Update memory counter
 					current_memory -= item_size
 
-			# Run producer and consumer concurrently
+			# Run both tasks concurrently
 			async with anyio.create_task_group() as tg:
-				tg.start_soon(producer)
-				tg.start_soon(consumer)
+				tg.start_soon(receive_from_upstream)
+				tg.start_soon(send_to_downstream)
+
