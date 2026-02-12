@@ -1017,3 +1017,123 @@ class TestMemoryBufferIntegration:
 		
 		with pytest.raises(ValueError, match="max_buffer_bytes must be > 0"):
 			ProcessConfig(max_buffer_bytes=-100)
+
+	async def test_two_workers_blocking_behavior(self) -> None:
+		"""
+		Test if short tasks get blocked with 2 workers per stage.
+		
+		Scenario:
+		- 10 initial items
+		- Stage 1: map(short_task) - 0.1s per item, 2 workers
+		- Stage 2: map(long_task) - 2s per item, 2 workers
+		
+		Expected behavior with 2 workers and buffer_size=0 (default):
+		- Stage 1 has 2 workers, so can process 2 items at a time
+		- Each short task takes 0.1s
+		- Stage 2 has 2 workers, so can process 2 items at a time
+		- Each long task takes 2s
+		
+		With buffer_size=0 (rendezvous), Stage 1 workers will block waiting for Stage 2
+		to accept items. Since Stage 2 workers are busy for 2s each, Stage 1 will
+		experience blocking.
+		
+		Expected timing:
+		- First 2 items: Stage 1 processes in 0.1s, Stage 2 starts immediately
+		- Stage 1 workers block until Stage 2 finishes (2s)
+		- Next 2 items: Stage 1 processes in 0.1s, Stage 2 starts
+		- This repeats for all 10 items in batches of 2
+		
+		Total time: ~5 batches × 2s = ~10s (with Stage 1 mostly blocked)
+		"""
+		stage1_events: list[tuple[str, int, float]] = []
+		stage2_events: list[tuple[str, int, float]] = []
+		t0 = time.monotonic()
+		
+		# Stage 1: Short tasks (0.1s each)
+		async def short_task(x: int) -> int:
+			stage1_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(0.1)
+			stage1_events.append(("end", x, time.monotonic() - t0))
+			return x
+		
+		# Stage 2: Long tasks (2s each)
+		async def long_task(x: int) -> int:
+			stage2_events.append(("start", x, time.monotonic() - t0))
+			await anyio.sleep(2.0)
+			stage2_events.append(("end", x, time.monotonic() - t0))
+			return x * 2
+		
+		# Pipeline with 2 workers per stage and buffer_size=0 (rendezvous)
+		result = await (
+			Stream.from_iterable(range(10))
+			.map(short_task, workers=2, buffer_size=0)  # 2 workers, no buffering
+			.map(long_task, workers=2, buffer_size=0)   # 2 workers, no buffering
+			.collect()
+		)
+		
+		total_time = time.monotonic() - t0
+		
+		assert sorted(result) == [i * 2 for i in range(10)]
+		
+		# With 2 workers per stage and rendezvous (buffer_size=0), Stage 1 workers
+		# will block waiting for Stage 2 to accept items.
+		# 10 items / 2 workers = 5 batches
+		# Each batch takes ~2s (limited by Stage 2)
+		# Expected: ~10s total (5 batches × 2s)
+		print(
+			f"\nTwo workers blocking test:"
+			f"\n  Total time: {total_time:.3f}s"
+			f"\n  Expected: ~10s (5 batches of 2 items, each taking 2s)"
+		)
+		
+		# Verify the pipeline takes approximately the expected time
+		# With some tolerance for scheduling overhead
+		assert 9.0 < total_time < 11.5, (
+			f"Expected pipeline to take ~10s with 2 workers and blocking behavior, "
+			f"but took {total_time:.2f}s"
+		)
+		
+		# Analyze Stage 1 blocking behavior
+		# Stage 1 tasks should show significant gaps between batches
+		stage1_starts = sorted([t for ev, _, t in stage1_events if ev == "start"])
+		if len(stage1_starts) >= 4:
+			# Gap between first batch and second batch should be ~2s (Stage 2 blocking)
+			first_batch_end = stage1_starts[1]  # 2nd item starts (first batch processing)
+			second_batch_start = stage1_starts[2]  # 3rd item starts (second batch)
+			gap = second_batch_start - first_batch_end
+			
+			print(
+				f"\n  Stage 1 behavior:"
+				f"\n    First batch start: {stage1_starts[0]:.3f}s, {stage1_starts[1]:.3f}s"
+				f"\n    Second batch start: {stage1_starts[2]:.3f}s, {stage1_starts[3]:.3f}s"
+				f"\n    Gap between batches: {gap:.3f}s"
+			)
+			
+			# The gap should be close to 2s (Stage 2 long task duration)
+			# This confirms Stage 1 is blocked by Stage 2
+			assert 1.7 < gap < 2.3, (
+				f"Expected Stage 1 to be blocked for ~2s between batches, "
+				f"but gap was {gap:.2f}s. This indicates Stage 1 is {'not ' if gap < 1.7 else ''}blocked."
+			)
+		
+		# Verify Stage 2 processes items in batches of 2
+		stage2_starts = sorted([t for ev, _, t in stage2_events if ev == "start"])
+		if len(stage2_starts) >= 4:
+			# First 2 items should start nearly simultaneously
+			batch1_spread = stage2_starts[1] - stage2_starts[0]
+			assert batch1_spread < 0.3, (
+				f"First batch of Stage 2 should start nearly simultaneously, "
+				f"but spread was {batch1_spread:.2f}s"
+			)
+			
+			# Next batch should start ~2s later (after first batch completes)
+			batch_gap = stage2_starts[2] - stage2_starts[0]
+			assert 1.7 < batch_gap < 2.3, (
+				f"Second batch of Stage 2 should start ~2s after first batch, "
+				f"but gap was {batch_gap:.2f}s"
+			)
+		
+		print(
+			f"\n  Conclusion: Short tasks ARE blocked by long tasks with 2 workers"
+			f"\n  and buffer_size=0 (rendezvous backpressure)"
+		)
