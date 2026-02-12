@@ -454,7 +454,9 @@ class Stream[T](ResultStages):
 				if batch:
 					if isinstance(item, AsyncIterable):
 						results.append([sub async for sub in item])  # type: ignore[arg-type]
-					elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+					elif isinstance(item, Iterable) and not isinstance(
+						item, (str, bytes)
+					):
 						results.append(list(item))  # type: ignore[arg-type]
 					else:
 						results.append(item)
