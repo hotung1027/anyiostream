@@ -64,6 +64,7 @@ U = TypeVar("U")
 # Sentinel for pipe.collect() / pipe.count() — tells __or__ to materialize
 _COLLECT_SENTINEL = object()
 _COUNT_SENTINEL = object()
+_COLLECT_BATCH_SENTINEL = object()
 _COLLECT_SPLIT_SENTINEL = object()
 
 # ---------------------------------------------------------------------------
@@ -402,9 +403,14 @@ class Stream[T](ResultStages):
 	# Terminal operations
 	# ------------------------------------------------------------------
 
-	async def collect(self) -> list[T]:
+	async def collect(self, *, batch: bool = False) -> list[T]:
 		"""
 		Execute the pipeline and collect all outputs into a list.
+
+		Args:
+			batch: If ``True``, drain any ``AsyncIterable`` or ``Iterable``
+				items into sub-lists, so that a ``Stream[AsyncIterator[U]]``
+				produces ``list[list[U]]`` instead of ``list[AsyncIterator[U]]``.
 
 		Returns:
 			All items produced by the final process.
@@ -412,7 +418,15 @@ class Stream[T](ResultStages):
 		results: list[T] = []
 		async with self._execute() as recv:
 			async for item in recv:
-				results.append(item)
+				if batch:
+					if isinstance(item, AsyncIterable):
+						results.append([sub async for sub in item])  # type: ignore[arg-type]
+					elif isinstance(item, Iterable) and not isinstance(item, (str, bytes)):
+						results.append(list(item))  # type: ignore[arg-type]
+					else:
+						results.append(item)
+				else:
+					results.append(item)
 		return results
 
 	async def count(self) -> int:
@@ -499,6 +513,8 @@ class Stream[T](ResultStages):
 		"""
 		if other is _COLLECT_SENTINEL:
 			return self.collect()
+		if other is _COLLECT_BATCH_SENTINEL:
+			return self.collect(batch=True)
 		if other is _COUNT_SENTINEL:
 			return self.count()
 		if other is _COLLECT_SPLIT_SENTINEL:

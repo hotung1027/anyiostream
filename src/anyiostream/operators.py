@@ -22,6 +22,7 @@ from collections.abc import AsyncIterable, Awaitable, Callable, Iterable
 from typing import Any, TypeVar
 
 from anyiostream.stream import (
+	_COLLECT_BATCH_SENTINEL,
 	_COLLECT_SENTINEL,
 	_COLLECT_SPLIT_SENTINEL,
 	_COUNT_SENTINEL,
@@ -200,13 +201,19 @@ class _Pipe:
 		return _apply
 
 	@staticmethod
-	def collect() -> Any:
+	def collect(*, batch: bool = False) -> Any:
 		"""
 		``| pipe.collect()`` — terminal: collect all items into a list.
+
+		Args:
+			batch: If ``True``, drain any ``AsyncIterable``/``Iterable``
+				items into sub-lists.
 
 		Returns:
 			Sentinel that triggers ``Stream.__or__`` to call ``.collect()``.
 		"""
+		if batch:
+			return _COLLECT_BATCH_SENTINEL
 		return _COLLECT_SENTINEL
 
 	@staticmethod
