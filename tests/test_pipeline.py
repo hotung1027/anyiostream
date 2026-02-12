@@ -496,8 +496,19 @@ class TestBackpressure:
 	async def test_backpressure_with_long_running_tasks(self) -> None:
 		"""
 		Test that source doesn't produce all items immediately when workers
-		are busy with long-running tasks. With proper backpressure, items
-		should only be produced as workers become available.
+		are busy with long-running tasks. With proper backpressure and mixed
+		workload (short + long tasks), resources are allocated efficiently.
+
+		Scenario:
+		- 9 short tasks (0.1s each)
+		- 1 long task (10s)
+		- 2 workers with buffer_size=0 (rendezvous)
+
+		Expected behavior:
+		- Short tasks complete in ~1s (9 items / 2 workers * 0.1s + overhead)
+		- Long task completes after: ~1s + 10s = ~11s total
+		- With proper backpressure, workers don't exhaust and resources are
+		  allocated such that long-running task doesn't monopolize
 		"""
 		produced_items: list[tuple[int, float]] = []
 		consumed_items: list[tuple[int, float]] = []
@@ -509,38 +520,55 @@ class TestBackpressure:
 				produced_items.append((i, time.monotonic() - t0))
 				yield i
 
-		# Simulate a long-running task
-		async def long_task(x: int) -> int:
-			await anyio.sleep(0.1)  # Each task takes 0.1s
+		# Mixed workload: short tasks for first 9 items, long task for last item
+		async def mixed_task(x: int) -> int:
+			if x < 9:
+				# Short task: 0.1 seconds
+				await anyio.sleep(0.1)
+			else:
+				# Long task: 10 seconds (simulates IO-intensive operation)
+				await anyio.sleep(10.0)
 			consumed_items.append((x, time.monotonic() - t0))
 			return x * 2
 
 		# With buffer_size=0 (rendezvous) and 2 workers, we expect:
 		# - Source should block when workers are busy
 		# - Items should NOT all be produced immediately
+		# - Short tasks complete quickly, then long task runs
 		result = await (
 			Stream.from_iterable(tracked_source())
-			.map(long_task, workers=2, buffer_size=0)
+			.map(mixed_task, workers=2, buffer_size=0)
 			.collect()
 		)
+
+		total_time = time.monotonic() - t0
 
 		assert sorted(result) == [i * 2 for i in range(10)]
 
 		# Verify backpressure: source should not produce all items immediately
-		# With 10 items, 2 workers, 0.1s per task:
+		# With mixed workload:
 		# - If no backpressure: all 10 items produced at t=0
 		# - With backpressure: items spread over time as workers become available
 
 		# Check that items were produced gradually, not all at once
 		production_times = [t for _, t in produced_items]
-
-		# At least the last item should be produced significantly later than first
-		# (allowing some variance for scheduling)
 		time_spread = production_times[-1] - production_times[0]
 
-		# With 2 workers processing 10 items at 0.1s each, total time should be ~0.5s
-		# The source should be blocked and producing items gradually, not all at t=0
+		# With proper backpressure, production should be gradual
+		# (not all items produced in <1ms)
 		assert time_spread > 0.2, (
 			f"Expected gradual production with backpressure, but time spread was {time_spread:.3f}s. "
 			f"Production times: {production_times}"
+		)
+
+		# Verify completion times for resource allocation check
+		# Last item (long task) should complete at approximately:
+		# 9 short tasks / 2 workers * 0.1s + 10s long task = ~1s + 10s = ~11s
+		# Allow generous margin for scheduling overhead and test flakiness
+		last_completion_time = consumed_items[-1][1]
+		assert 10.0 < last_completion_time < 13.0, (
+			f"Expected last item (long task) to complete around 11s, "
+			f"but completed at {last_completion_time:.2f}s. "
+			f"This indicates workers may be exhausted or resource allocation issue. "
+			f"Consumption times: {consumed_items}"
 		)
