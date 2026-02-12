@@ -302,6 +302,39 @@ class Stream[T](ResultStages):
 		)
 		return Stream(self._source_factory, [*self._processes, process])
 
+	def flatten(
+		self,
+		*,
+		workers: int = 1,
+		buffer_size: float = 0,
+		max_buffer_bytes: int = 10_000_000,
+		size_func: Callable[[Any], int] | None = None,
+		name: str | None = None,
+	) -> Stream[Any]:
+		"""
+		Flatten iterables in the stream.
+
+		Converts a ``Stream[AsyncIterable[U] | Iterable[U]]`` into a
+		``Stream[U]`` by yielding each sub-item individually — equivalent
+		to ``flat_map(identity)``.
+
+		Args:
+			workers: Concurrent workers for this process.
+			buffer_size: Backpressure buffer to downstream.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
+			size_func: Optional function to calculate item size in bytes.
+			name: Label for tracing.
+		"""
+		return self.flat_map(
+			lambda x: x,
+			workers=workers,
+			buffer_size=buffer_size,
+			max_buffer_bytes=max_buffer_bytes,
+			size_func=size_func,
+			name=name,
+		)
+
 	# ------------------------------------------------------------------
 	# Execution engine (structured concurrency)
 	# ------------------------------------------------------------------

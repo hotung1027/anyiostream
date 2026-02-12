@@ -201,6 +201,41 @@ class _Pipe:
 		return _apply
 
 	@staticmethod
+	def flatten(
+		*,
+		workers: int = 1,
+		buffer_size: float = 0,
+		max_buffer_bytes: int = 10_000_000,
+		size_func: Callable[[Any], int] | None = None,
+		name: str | None = None,
+	) -> Callable[[Stream[Any]], Stream[Any]]:
+		"""
+		``| pipe.flatten()`` — flatten iterables in the stream.
+
+		Args:
+			workers: Concurrent workers.
+			buffer_size: Backpressure buffer.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
+			size_func: Optional function to calculate item size in bytes.
+			name: Debug label.
+
+		Returns:
+			A pipe operator.
+		"""
+
+		def _apply(stream: Stream[Any]) -> Stream[Any]:
+			return stream.flatten(
+				workers=workers,
+				buffer_size=buffer_size,
+				max_buffer_bytes=max_buffer_bytes,
+				size_func=size_func,
+				name=name,
+			)
+
+		return _apply
+
+	@staticmethod
 	def collect(*, batch: bool = False) -> Any:
 		"""
 		``| pipe.collect()`` — terminal: collect all items into a list.
