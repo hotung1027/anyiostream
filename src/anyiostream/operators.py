@@ -53,8 +53,6 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
-		item_size_hint: int = 1024,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[U]]:
 		"""
@@ -64,8 +62,6 @@ class _Pipe:
 			func: Transform function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer (item count).
-			max_buffer_bytes: Memory-based buffer limit (takes precedence over buffer_size).
-			item_size_hint: Estimated item size in bytes (used with max_buffer_bytes).
 			name: Debug label.
 
 		Returns:
@@ -77,8 +73,6 @@ class _Pipe:
 				func,
 				workers=workers,
 				buffer_size=buffer_size,
-				max_buffer_bytes=max_buffer_bytes,
-				item_size_hint=item_size_hint,
 				name=name,
 			)
 
