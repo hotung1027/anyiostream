@@ -151,7 +151,7 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[U]:
@@ -162,7 +162,8 @@ class Stream[T](ResultStages):
 			func: Transform function ``T -> U``.
 			workers: Concurrent workers for this process.
 			buffer_size: Backpressure buffer to downstream (item count).
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 				When set, enables MemoryBuffer for memory-aware buffering.
 			size_func: Optional function to calculate item size in bytes.
 				Only used when max_buffer_bytes is specified.
@@ -187,7 +188,7 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[U]:
@@ -198,7 +199,8 @@ class Stream[T](ResultStages):
 			func: Transform function ``T -> Iterable[U]`` or ``T -> AsyncIterable[U]``.
 			workers: Concurrent workers for this process.
 			buffer_size: Backpressure buffer to downstream.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 				When set, enables MemoryBuffer for memory-aware buffering.
 			size_func: Optional function to calculate item size in bytes.
 				Only used when max_buffer_bytes is specified.
@@ -223,7 +225,7 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[T]:
@@ -234,7 +236,8 @@ class Stream[T](ResultStages):
 			predicate: Filter function ``T -> bool``.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer to downstream.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 				When set, enables MemoryBuffer for memory-aware buffering.
 			size_func: Optional function to calculate item size in bytes.
 				Only used when max_buffer_bytes is specified.
@@ -259,7 +262,7 @@ class Stream[T](ResultStages):
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Stream[T]:
@@ -272,7 +275,8 @@ class Stream[T](ResultStages):
 			func: Side-effect function ``T -> None``.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer to downstream.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 				When set, enables MemoryBuffer for memory-aware buffering.
 			size_func: Optional function to calculate item size in bytes.
 				Only used when max_buffer_bytes is specified.
@@ -340,18 +344,13 @@ class Stream[T](ResultStages):
 		] = []
 
 		# Source → first process channel
-		# If first process uses MemoryBuffer, source channel is unbounded
-		if processes[0].config.max_buffer_bytes is not None:
-			channels.append(anyio.create_memory_object_stream[Any](math.inf))
-		else:
-			channels.append(anyio.create_memory_object_stream[Any](
-				processes[0].config.buffer_size
-			))
+		# MemoryBuffer is always enabled, so source channel is unbounded
+		channels.append(anyio.create_memory_object_stream[Any](math.inf))
 
 		# Inter-process + final output channels
 		for i, process in enumerate(processes):
-			# If this process uses MemoryBuffer, next channel is unbounded
-			if i + 1 < len(processes) and processes[i + 1].config.max_buffer_bytes is not None:
+			# MemoryBuffer is always enabled, so inter-process channels are unbounded
+			if i + 1 < len(processes):
 				channels.append(anyio.create_memory_object_stream[Any](math.inf))
 			else:
 				channels.append(
@@ -366,29 +365,25 @@ class Stream[T](ResultStages):
 			# 1. Source producer
 			tg.start_soon(self._source_factory, channels[0][0])
 
-			# 2. Each process with optional MemoryBuffer integration
+			# 2. Each process with MemoryBuffer integration
 			for i, process in enumerate(processes):
-				if process.config.max_buffer_bytes is not None:
-					# Create MemoryBuffer layer
-					# upstream → [unbounded recv from channels[i]] → MemoryBuffer → [bounded] → process → [channels[i+1]]
-					memory_buffer = MemoryBuffer(
-						max_buffer_bytes=process.config.max_buffer_bytes,
-						size_func=process.config.size_func,
-					)
+				# Create MemoryBuffer layer
+				# upstream → [unbounded recv from channels[i]] → MemoryBuffer → [bounded] → process → [channels[i+1]]
+				memory_buffer = MemoryBuffer(
+					max_buffer_bytes=process.config.max_buffer_bytes,
+					size_func=process.config.size_func,
+				)
 
-					# Create bounded channel between MemoryBuffer and process
-					mb_send, mb_recv = anyio.create_memory_object_stream[Any](
-						process.config.buffer_size
-					)
+				# Create bounded channel between MemoryBuffer and process
+				mb_send, mb_recv = anyio.create_memory_object_stream[Any](
+					process.config.buffer_size
+				)
 
-					# Start MemoryBuffer: reads from upstream, writes to mb_send
-					tg.start_soon(memory_buffer.run, channels[i][1], mb_send)
+				# Start MemoryBuffer: reads from upstream, writes to mb_send
+				tg.start_soon(memory_buffer.run, channels[i][1], mb_send)
 
-					# Start process: reads from mb_recv, writes to downstream
-					tg.start_soon(process.run, mb_recv, channels[i + 1][0])
-				else:
-					# Normal process without MemoryBuffer
-					tg.start_soon(process.run, channels[i][1], channels[i + 1][0])
+				# Start process: reads from mb_recv, writes to downstream
+				tg.start_soon(process.run, mb_recv, channels[i + 1][0])
 
 			# 3. Yield the final output stream to the caller
 			try:

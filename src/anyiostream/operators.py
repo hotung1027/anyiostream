@@ -53,7 +53,7 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[U]]:
@@ -64,7 +64,8 @@ class _Pipe:
 			func: Transform function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer (item count).
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
@@ -90,7 +91,7 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[U]]:
@@ -101,7 +102,8 @@ class _Pipe:
 			func: Function returning iterable or async iterable.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
@@ -127,7 +129,7 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[T]]:
@@ -138,7 +140,8 @@ class _Pipe:
 			predicate: Filter function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
@@ -164,7 +167,7 @@ class _Pipe:
 		*,
 		workers: int = 1,
 		buffer_size: float = 0,
-		max_buffer_bytes: int | None = None,
+		max_buffer_bytes: int = 10_000_000,
 		size_func: Callable[[Any], int] | None = None,
 		name: str | None = None,
 	) -> Callable[[Stream[T]], Stream[T]]:
@@ -175,7 +178,8 @@ class _Pipe:
 			func: Side-effect function.
 			workers: Concurrent workers.
 			buffer_size: Backpressure buffer.
-			max_buffer_bytes: Optional memory-based buffer limit in bytes.
+			max_buffer_bytes: Memory-based buffer limit in bytes.
+				Defaults to 10MB (10_000_000 bytes).
 			size_func: Optional function to calculate item size in bytes.
 			name: Debug label.
 
