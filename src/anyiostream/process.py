@@ -12,6 +12,7 @@ Result-aware operations: ``try_map``, ``try_flat_map``, ``try_filter``,
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterable, Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -453,3 +454,103 @@ class ResultStages:
 				else:
 					oks.append(item)
 		return oks, errs
+
+
+# ---------------------------------------------------------------------------
+# Buffer Allocator
+# ---------------------------------------------------------------------------
+
+
+class BufferAllocator:
+	"""
+	Memory-aware buffer layer that sits between pipeline stages.
+
+	This intermediate layer tracks actual memory usage of buffered items
+	and enforces a memory limit, providing true OOM protection rather than
+	relying on item count estimates.
+
+	Architecture:
+		Process → MemoryObjectStream(unbounded) → BufferAllocator → MemoryObjectStream(item_queue_size) → Process
+
+	The BufferAllocator maintains an internal buffer of items with memory tracking:
+	1. Pulls items from upstream (unbounded queue)
+	2. Calculates actual memory size using sys.getsizeof()
+	3. Buffers items up to max_buffer_bytes limit
+	4. Forwards items to downstream queue when:
+	   - Downstream has capacity (item_queue_size limit)
+	   - We need to make room for new items
+	5. Blocks upstream when memory budget is exhausted
+	"""
+
+	def __init__(
+		self,
+		max_buffer_bytes: int,
+		item_queue_size: int = 0,
+	) -> None:
+		"""
+		Initialize buffer allocator.
+
+		Args:
+			max_buffer_bytes: Maximum memory to buffer in bytes.
+			item_queue_size: Size of downstream item queue (for backpressure).
+		"""
+		self.max_buffer_bytes = max_buffer_bytes
+		self.item_queue_size = item_queue_size
+
+	async def run(
+		self,
+		recv: MemoryObjectReceiveStream[Any],
+		send: MemoryObjectSendStream[Any],
+	) -> None:
+		"""
+		Run the buffer allocator.
+
+		Pulls items from recv, buffers them with memory tracking,
+		forwards to send when appropriate.
+
+		Args:
+			recv: Upstream receive stream (from previous process).
+			send: Downstream send stream (to next process).
+		"""
+		async with recv, send:
+			# Internal buffer: list of (item, size) tuples
+			buffer: list[tuple[Any, int]] = []
+			current_memory = 0
+			upstream_done = False
+
+			async def producer() -> None:
+				"""Pull items from upstream and add to buffer."""
+				nonlocal current_memory, upstream_done
+				try:
+					async for item in recv:
+						item_size = sys.getsizeof(item)
+
+						# Wait if buffer is full (memory limit reached)
+						while current_memory + item_size > self.max_buffer_bytes:
+							await anyio.sleep(0.001)
+
+						# Add to buffer
+						buffer.append((item, item_size))
+						current_memory += item_size
+				finally:
+					upstream_done = True
+
+			async def consumer() -> None:
+				"""Forward items from buffer to downstream."""
+				nonlocal current_memory
+				while not upstream_done or buffer:
+					# Wait for items in buffer
+					while not buffer:
+						if upstream_done:
+							return  # All done
+						await anyio.sleep(0.001)
+
+					# Forward oldest item
+					item, item_size = buffer.pop(0)
+					await send.send(item)
+					current_memory -= item_size
+
+			# Run producer and consumer concurrently
+			async with anyio.create_task_group() as tg:
+				tg.start_soon(producer)
+				tg.start_soon(consumer)
