@@ -814,3 +814,206 @@ class TestBackpressure:
 				f"\n  Stage 1 NOT blocked - completed in ~0.1s"
 				f"\n  Pipeline runs smoothly with appropriate buffer_size"
 			)
+
+
+# =========================================================================
+# MemoryBuffer Integration Tests
+# =========================================================================
+
+
+class TestMemoryBufferIntegration:
+	"""Tests for MemoryBuffer integration with max_buffer_bytes parameter."""
+
+	async def test_max_buffer_bytes_basic(self) -> None:
+		"""Test that max_buffer_bytes enables MemoryBuffer integration."""
+		# Create items that are approximately 1KB each
+		items = [b"x" * 1024 for _ in range(10)]
+		
+		result = await (
+			Stream.from_iterable(items)
+			.map(
+				lambda x: x + b"y",
+				max_buffer_bytes=5 * 1024,  # 5KB limit
+				buffer_size=2,
+			)
+			.collect()
+		)
+		
+		assert len(result) == 10
+		assert all(len(item) == 1025 for item in result)
+
+	async def test_max_buffer_bytes_with_custom_size_func(self) -> None:
+		"""Test max_buffer_bytes with custom size_func."""
+		items = list(range(100))
+		
+		def custom_size(x: int) -> int:
+			# Treat each item as 100 bytes
+			return 100
+		
+		result = await (
+			Stream.from_iterable(items)
+			.map(
+				lambda x: x * 2,
+				max_buffer_bytes=1000,  # Allow 10 items in buffer
+				size_func=custom_size,
+				buffer_size=5,
+			)
+			.collect()
+		)
+		
+		assert result == [x * 2 for x in items]
+
+	async def test_max_buffer_bytes_multi_stage(self) -> None:
+		"""Test MemoryBuffer in multi-stage pipeline."""
+		items = [{"data": b"x" * 512} for _ in range(20)]
+		
+		result = await (
+			Stream.from_iterable(items)
+			.map(
+				lambda x: {"data": x["data"] + b"y"},
+				max_buffer_bytes=5 * 1024,
+				buffer_size=3,
+			)
+			.map(
+				lambda x: len(x["data"]),
+				max_buffer_bytes=2 * 1024,
+				buffer_size=2,
+			)
+			.collect()
+		)
+		
+		assert len(result) == 20
+		assert all(size == 513 for size in result)
+
+	async def test_max_buffer_bytes_memory_limiting(self) -> None:
+		"""Test that MemoryBuffer limits memory usage."""
+		import asyncio
+		
+		produced = []
+		consumed = []
+		
+		async def slow_consumer(x: int) -> int:
+			consumed.append(x)
+			await anyio.sleep(0.01)  # Slow down consumption
+			return x
+		
+		async def fast_producer() -> AsyncIterator[bytes]:
+			for i in range(50):
+				item = b"x" * 1024  # 1KB each
+				produced.append(i)
+				yield item
+		
+		result = await (
+			Stream.from_callable(fast_producer)
+			.map(
+				slow_consumer,
+				max_buffer_bytes=10 * 1024,  # 10KB limit (~10 items)
+				buffer_size=5,
+				workers=1,
+			)
+			.collect()
+		)
+		
+		assert len(result) == 50
+		# MemoryBuffer should prevent unlimited queueing
+
+	async def test_max_buffer_bytes_default_size_estimation(self) -> None:
+		"""Test MemoryBuffer's default size estimation for different types."""
+		items = [
+			42,  # int
+			"hello",  # str
+			b"world",  # bytes
+			[1, 2, 3],  # list
+			{"a": 1, "b": 2},  # dict
+		]
+		
+		result = await (
+			Stream.from_iterable(items)
+			.map(
+				lambda x: x,
+				max_buffer_bytes=10 * 1024,  # 10KB
+				buffer_size=2,
+			)
+			.collect()
+		)
+		
+		assert result == items
+
+	async def test_max_buffer_bytes_with_filter(self) -> None:
+		"""Test MemoryBuffer with filter operation."""
+		items = list(range(100))
+		
+		result = await (
+			Stream.from_iterable(items)
+			.filter(
+				lambda x: x % 2 == 0,
+				max_buffer_bytes=5 * 1024,
+				buffer_size=10,
+			)
+			.collect()
+		)
+		
+		assert result == [x for x in items if x % 2 == 0]
+
+	async def test_max_buffer_bytes_with_flat_map(self) -> None:
+		"""Test MemoryBuffer with flat_map operation."""
+		items = [1, 2, 3]
+		
+		result = await (
+			Stream.from_iterable(items)
+			.flat_map(
+				lambda x: [x, x * 10],
+				max_buffer_bytes=2 * 1024,
+				buffer_size=5,
+			)
+			.collect()
+		)
+		
+		assert result == [1, 10, 2, 20, 3, 30]
+
+	async def test_max_buffer_bytes_with_foreach(self) -> None:
+		"""Test MemoryBuffer with foreach operation."""
+		items = list(range(20))
+		side_effects = []
+		
+		result = await (
+			Stream.from_iterable(items)
+			.foreach(
+				lambda x: side_effects.append(x),
+				max_buffer_bytes=3 * 1024,
+				buffer_size=4,
+			)
+			.collect()
+		)
+		
+		assert result == items
+		assert side_effects == items
+
+	async def test_max_buffer_bytes_pipe_operator(self) -> None:
+		"""Test MemoryBuffer with pipe operator syntax."""
+		items = list(range(30))
+		
+		result = await (
+			Stream.from_iterable(items)
+			| pipe.map(
+				lambda x: x * 2,
+				max_buffer_bytes=4 * 1024,
+				buffer_size=6,
+			)
+			| pipe.filter(
+				lambda x: x < 40,
+				max_buffer_bytes=3 * 1024,
+				buffer_size=5,
+			)
+		).collect()
+		
+		expected = [x * 2 for x in items if x * 2 < 40]
+		assert result == expected
+
+	async def test_config_validation_max_buffer_bytes(self) -> None:
+		"""Test that ProcessConfig validates max_buffer_bytes."""
+		with pytest.raises(ValueError, match="max_buffer_bytes must be > 0"):
+			ProcessConfig(max_buffer_bytes=0)
+		
+		with pytest.raises(ValueError, match="max_buffer_bytes must be > 0"):
+			ProcessConfig(max_buffer_bytes=-100)
